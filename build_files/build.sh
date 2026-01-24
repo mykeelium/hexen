@@ -66,6 +66,7 @@ vim.opt.rtp:prepend(lazypath)
 require("config")
 EOF
 mkdir -p /usr/share/nvim/lazy
+mkdir -p /usr/share/nvim/config
 git clone https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
 git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
 # this command might return an error, but we want to continue regardless
