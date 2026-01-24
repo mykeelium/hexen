@@ -53,7 +53,8 @@ systemctl enable podman.socket
 # neovim
 mkdir -p /tmp/
 git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
-mv -r /tmp/nvim-config/pack /usr/share/nvim
+# this command might return an error, but we want to continue regardless
+mv /tmp/nvim-config/pack/* /tmp/nvim-config/pack/.* /usr/share/nvim || :
 mkdir -p /etc/skel/.config
 ln -s /usr/share/nvim /etc/skel/.config/nvim
 NVIM_APPNAME=nvim \
