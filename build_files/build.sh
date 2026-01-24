@@ -47,3 +47,22 @@ dnf5 -y copr disable varlad/zellij
 #### Example for enabling a System Unit File
 
 systemctl enable podman.socket
+
+# Configuration
+
+# neovim
+mkdir -p /tmp/
+git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
+mv -r /tmp/nvim-config/pack /usr/share/nvim
+mkdir -p /etc/skel/.config
+ln -s /usr/share/nvim /etc/skel/.config/nvim
+NVIM_APPNAME=nvim \
+XDG_DATA_HOME=/usr/share \
+XDG_STATE_HOME=/var/lib/nvim \
+nvim --headless "+Lazy! sync" +qa
+chmod -R 755 /usr/share/nvim
+chmod -R 755 /usr/share/nvim/site
+
+
+
+rm -rf /tmp/*
