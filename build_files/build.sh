@@ -56,6 +56,17 @@ mkdir -p /tmp/
 
 # neovim
 mkdir -p /usr/share/nvim
+cat > /usr/bin/nvim-system <<'EOF'
+#!/bin/sh
+export HOME=/var/lib/nvim
+export XDG_CONFIG_HOME=/usr/share
+export XDG_DATA_HOME=/usr/share
+export XDG_STATE_HOME=/var/lib/nvim
+exec /usr/bin/nvim "$@"
+EOF
+
+chmod +x /usr/bin/nvim-system
+
 cat > /usr/share/nvim/init.lua <<'EOF'
 package.path = "/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
 local lazypath = "/usr/share/nvim/lazy"
@@ -78,10 +89,12 @@ git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
 mv /tmp/nvim-config/pack/* /tmp/nvim-config/pack/.* /usr/share/nvim/config || :
 mkdir -p /etc/skel/.config
 ln -s /usr/share/nvim /etc/skel/.config/nvim
-NVIM_APPNAME=nvim \
-XDG_DATA_HOME=/usr/share \
-XDG_STATE_HOME=/var/lib/nvim \
-nvim --headless "Lazy! sync" -c "qa"
+
+# NVIM_APPNAME=nvim \
+# XDG_DATA_HOME=/usr/share \
+# XDG_STATE_HOME=/var/lib/nvim \
+
+nvim-system --headless "Lazy! sync" -c "qa"
 chmod -R 755 /usr/share/nvim 
 chmod -R 755 /var/lib/nvim
 
