@@ -42,7 +42,7 @@ dnf5 install -y zellij
 dnf5 -y copr disable scottames/ghostty
 dnf5 -y copr disable dejan/lazygit
 # dnf5 -y copr disable sneexy/zen-browser
-dnf5 -y copr disable carlad/zellij
+dnf5 -y copr disable varlad/zellij
 
 #### Example for enabling a System Unit File
 
