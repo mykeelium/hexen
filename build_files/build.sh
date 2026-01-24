@@ -49,18 +49,33 @@ dnf5 -y copr disable varlad/zellij
 systemctl enable podman.socket
 
 # Configuration
+mkdir -p /tmp/
 
 # neovim
-mkdir -p /tmp/
+mkdir -p /usr/share/nvim
+cat > /usr/share/nvim/init.lua <<'EOF'
+local lazypath = "/usr/share/nvim/lazy"
+
+if not vim.loop.fs_stat(lazypath) then
+  vim.notify("lazy.nvim not found at " .. lazypath, vim.log.levels.ERROR)
+  return
+end
+
+vim.opt.rtp:prepend(lazypath)
+
+require("config")
+EOF
+mkdir -p /usr/share/nvim/lazy
+git clone https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
 git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
 # this command might return an error, but we want to continue regardless
-mv /tmp/nvim-config/pack/* /tmp/nvim-config/pack/.* /usr/share/nvim || :
+mv /tmp/nvim-config/pack/* /tmp/nvim-config/pack/.* /usr/share/nvim/config || :
 mkdir -p /etc/skel/.config
 ln -s /usr/share/nvim /etc/skel/.config/nvim
 NVIM_APPNAME=nvim \
 XDG_DATA_HOME=/usr/share \
 XDG_STATE_HOME=/var/lib/nvim \
-nvim --headless "+Lazy! sync" +qa
+nvim --headless "Lazy! sync" -c "qa"
 chmod -R 755 /usr/share/nvim
 chmod -R 755 /usr/share/nvim/site
 
