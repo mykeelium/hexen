@@ -32,8 +32,8 @@ dnf5 install -y ghostty
 dnf5 -y copr enable dejan/lazygit
 dnf5 install -y lazygit
 
-dnf5 -y copr enable sneexy/zen-browser
-dnf5 install -y zen-browser
+# dnf5 -y copr enable sneexy/zen-browser
+# dnf5 install -y zen-browser
 
 dnf5 -y copr enable varlad/zellij
 dnf5 install -y zellij
@@ -41,7 +41,7 @@ dnf5 install -y zellij
 # Disable
 dnf5 -y copr disable scottames/ghostty
 dnf5 -y copr disable dejan/lazygit
-dnf5 -y copr disable sneexy/zen-browser
+# dnf5 -y copr disable sneexy/zen-browser
 dnf5 -y copr disable carlad/zellij
 
 #### Example for enabling a System Unit File
