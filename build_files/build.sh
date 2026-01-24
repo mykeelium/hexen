@@ -51,10 +51,13 @@ systemctl enable podman.socket
 # Configuration
 mkdir -p /tmp/
 
+# TODO: remove if neovim packaing works
+# package.path = "/usr/share/nvim/config/?.lua;/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
+
 # neovim
 mkdir -p /usr/share/nvim
 cat > /usr/share/nvim/init.lua <<'EOF'
-package.path = "/usr/share/nvim/config.lua;/usr/share/nvim/config/init.lua;" .. package.path
+package.path = "/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
 local lazypath = "/usr/share/nvim/lazy"
 
 if not vim.loop.fs_stat(lazypath) then
@@ -64,7 +67,7 @@ end
 
 vim.opt.rtp:prepend(lazypath)
 
-require("config")
+require("machine")
 EOF
 mkdir -p /usr/share/nvim/lazy
 mkdir -p /usr/share/nvim/config
