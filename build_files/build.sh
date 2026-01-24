@@ -54,6 +54,7 @@ mkdir -p /tmp/
 # neovim
 mkdir -p /usr/share/nvim
 cat > /usr/share/nvim/init.lua <<'EOF'
+package.path = "/usr/share/nvim/config.lua;/usr/share/nvim/config/init.lua;" .. package.path
 local lazypath = "/usr/share/nvim/lazy"
 
 if not vim.loop.fs_stat(lazypath) then
