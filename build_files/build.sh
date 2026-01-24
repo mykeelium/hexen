@@ -81,8 +81,7 @@ NVIM_APPNAME=nvim \
 XDG_DATA_HOME=/usr/share \
 XDG_STATE_HOME=/var/lib/nvim \
 nvim --headless "Lazy! sync" -c "qa"
-chmod -R 755 /usr/share/nvim
-chmod -R 755 /usr/share/nvim/site
+chmod -R 755 /usr/share/nvim /var/lib/nvim/lazy
 
 
 
