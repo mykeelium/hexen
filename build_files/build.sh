@@ -70,6 +70,7 @@ vim.opt.rtp:prepend(lazypath)
 require("machine")
 EOF
 mkdir -p /usr/share/nvim/lazy
+mkdir -p /var/lib/nvim/lazy
 mkdir -p /usr/share/nvim/config
 git clone https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
 git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
@@ -81,7 +82,8 @@ NVIM_APPNAME=nvim \
 XDG_DATA_HOME=/usr/share \
 XDG_STATE_HOME=/var/lib/nvim \
 nvim --headless "Lazy! sync" -c "qa"
-chmod -R 755 /usr/share/nvim /var/lib/nvim/lazy
+chmod -R 755 /usr/share/nvim 
+chmod -R 755 /var/lib/nvim
 
 
 
