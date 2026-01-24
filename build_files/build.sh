@@ -47,3 +47,5 @@ dnf5 -y copr disable varlad/zellij
 #### Example for enabling a System Unit File
 
 systemctl enable podman.socket
+
+ostree-container commit
