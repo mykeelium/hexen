@@ -59,13 +59,13 @@ mkdir -p /usr/share/nvim
 cat > /usr/share/nvim/init.lua <<'EOF'
 package.path = "/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
 local lazypath = "/usr/share/nvim/lazy"
+vim.opt.rtp:prepend(lazypath)
 
 if not vim.loop.fs_stat(lazypath) then
   vim.notify("lazy.nvim not found at " .. lazypath, vim.log.levels.ERROR)
   return
 end
 
-vim.opt.rtp:prepend(lazypath)
 
 require("machine")
 EOF
