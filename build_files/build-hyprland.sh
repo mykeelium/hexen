@@ -65,11 +65,11 @@ cd "$BUILD_DIR"
 
 # build hprland from source
 git clone --recursive https://github.com/hyprwm/Hyprland
-pushd Hyprland
-meson setup _build --prefix=/usr
+cd Hyprland
+meson setup _build . --prefix=/usr
 ninja -C _build
 ninja -C _build install
-popd
+cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
 # Build hyprwayland-scanner (needed for building hypr tools)
