@@ -67,6 +67,16 @@ cd "$BUILD_DIR"
 
 # build hyprland from source
 
+# -----------------------------------------------------------------------------
+# Build hyprwayland-scanner (needed for building hypr tools)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprwayland-scanner.git
+cd hyprwayland-scanner
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
 # build aquamarine
 git clone https://github.com/hyprwm/aquamarine.git
 cd aquamarine
@@ -97,15 +107,6 @@ ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
-# -----------------------------------------------------------------------------
-# Build hyprwayland-scanner (needed for building hypr tools)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprwayland-scanner.git
-cd hyprwayland-scanner
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
 # Build hyprlang (config language library)
