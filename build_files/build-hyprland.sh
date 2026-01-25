@@ -60,8 +60,8 @@ dnf5 install -y \
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
 mkdir -p "$BUILD_DIR"
-mkdir -p /usr/local/share/wayland-sessions
-mkdir -p /usr/share/wayland-sessions/
+mkdir /usr/local/share/wayland-sessions
+mkdir /usr/share/wayland-sessions/
 cd "$BUILD_DIR"
 
 # build hprland from source
