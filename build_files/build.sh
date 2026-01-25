@@ -25,7 +25,7 @@ dnf5 install -y golang
 
 
 # gopls
-GOBIN=/usr/local/bin GOPATH=/tmp/go HOME=/tmp go install golang.org/x/tools/gopls@latest
+# GOBIN=/usr/local/bin GOPATH=/tmp/go HOME=/tmp go install golang.org/x/tools/gopls@latest
 
 # COPR
 
