@@ -25,7 +25,7 @@ dnf5 install -y golang
 
 
 # gopls
-GOBIN=/usr/local/bin go install golang.org/x/tools/gopls@latest
+GOBIN=/usr/local/bin GOMODCACHE=/tmp/go-mod go install golang.org/x/tools/gopls@latest
 
 
 # COPR
