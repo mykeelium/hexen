@@ -15,12 +15,17 @@ dnf5 install -y git
 dnf5 install -y libfido2
 dnf5 install -y neovim python3-neovim
 dnf5 install -y ripgrep
+dnf5 install -y golang
 
 # might need to use terrapkg - see: https://github.com/terrapkg/packages/tree/frawhide
 # dnf5 install -y zed
 
 # flatpak?
 # dnf5 install -y obsidian
+
+
+# gopls
+GOBIN=/usr/local/bin go install golang.org/x/tools/gopls@latest
 
 
 # COPR
