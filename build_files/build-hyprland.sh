@@ -65,7 +65,18 @@ mkdir -p "$BUILD_DIR"
 mkdir -p /usr/share/wayland-sessions/
 cd "$BUILD_DIR"
 
-# build hprland from source
+# build hyprland from source
+
+# build aquamarine
+git clone https://github.com/hyprwm/aquamarine.git
+cd aquamarine
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
 
 # build wayland-protocols
 git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
