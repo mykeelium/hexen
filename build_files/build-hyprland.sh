@@ -66,9 +66,10 @@ cd "$BUILD_DIR"
 # build hprland from source
 git clone --recursive https://github.com/hyprwm/Hyprland
 cd Hyprland
-meson setup _build . --prefix=/usr
-ninja -C _build
-ninja -C _build install
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+ls build/build.ninja
+ninja -C build
+ninja -C build install
 cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
