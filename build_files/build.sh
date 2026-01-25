@@ -56,7 +56,6 @@ mkdir -p /tmp/
 
 # neovim
 mkdir -p /usr/share/nvim
-mkdir -p /usr/share/nvim/config
 mkdir -p /usr/share/nvim/lazy
 mkdir -p /usr/share/nvim/plugins
 mkdir -p /var/lib/nvim/lazy
@@ -64,19 +63,6 @@ mkdir -p /var/lib/nvim/lazy
 git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
 git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
 cp -a /tmp/nvim-config/pack/. /usr/share/nvim/config/
-
-cat > /usr/share/nvim/init.lua <<'EOF'
-package.path = "/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
-local lazypath = "/usr/share/nvim/lazy"
-vim.opt.rtp:prepend(lazypath)
-
-if not vim.loop.fs_stat(lazypath) then
-  vim.notify("lazy.nvim not found at " .. lazypath, vim.log.levels.ERROR)
-  return
-end
-
-require("machine")
-EOF
 
 # Create symlink for user skeleton
 mkdir -p /etc/skel/.config
@@ -86,6 +72,7 @@ NVIM_APPNAME=nvim \
 HOME=/var/lib/nvim \
 XDG_CONFIG_HOME=/usr/share \
 XDG_DATA_HOME=/usr/share \
+XDG_CACHE_HOME=/var/lib/nvim \
 XDG_STATE_HOME=/var/lib/nvim \
 nvim --headless "+Lazy! restore" +qa
 
