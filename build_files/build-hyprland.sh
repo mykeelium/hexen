@@ -53,7 +53,8 @@ dnf5 install -y \
     xcb-util-devel \
     xcb-util-image-devel \
     xcb-util-renderutil-devel \
-    xcb-util-wm-devel
+    xcb-util-wm-devel \
+    pugixml-devel
 
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
