@@ -28,7 +28,7 @@ dnf5 install -y \
     git \
     meson \
     wayland-devel \
-    wayland-protocols-devel \
+    # wayland-protocols-devel \
     cairo-devel \
     pango-devel \
     libdrm-devel \
@@ -64,6 +64,18 @@ mkdir -p /usr/share/wayland-sessions/
 cd "$BUILD_DIR"
 
 # build hprland from source
+
+# build wayland-protocols
+git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
+cd wayland-protocols
+meson setup _build . --prefix=/usr --wrap-mode=nodownload
+ninja -C _build
+ninja -C _build install
+cd "$BUILD_DIR"
+
+pkg-config --modversion wayland-protocols
+
+# build hyprland directly
 git clone --recursive https://github.com/hyprwm/Hyprland
 cd Hyprland
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
