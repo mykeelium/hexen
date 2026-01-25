@@ -18,6 +18,9 @@ dnf5 install -y \
 
 dnf5 -y copr disable ashbuk/Hyprland-Fedora
 
+# packages I might be coming back to
+# wayland-protocols-devel \
+
 # -----------------------------------------------------------------------------
 # Install build dependencies
 # -----------------------------------------------------------------------------
@@ -28,7 +31,6 @@ dnf5 install -y \
     git \
     meson \
     wayland-devel \
-    # wayland-protocols-devel \
     cairo-devel \
     pango-devel \
     libdrm-devel \
