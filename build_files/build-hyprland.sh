@@ -1,21 +1,189 @@
 #!/bin/bash
 set -ouex pipefail
 
-# Enable Hyprland COPR
-dnf5 -y copr enable solopasha/hyprland
+# =============================================================================
+# Hyprland 0.53+ Build Script for Fedora
+# =============================================================================
+# Uses ashbuk COPR for Hyprland core (0.53.1+) and builds utilities from source
+# to ensure compatibility with the new window rule syntax.
+# =============================================================================
 
-# Install Hyprland and core dependencies
+# -----------------------------------------------------------------------------
+# Install Hyprland core from ashbuk COPR (has 0.53.1+)
+# -----------------------------------------------------------------------------
+dnf5 -y copr enable ashbuk/Hyprland-Fedora
+
 dnf5 install -y \
     hyprland \
-    hyprpaper \
-    hyprlock \
-    hypridle \
-    hyprsunset \
-    hyprpicker \
     xdg-desktop-portal-hyprland
 
-# Disable COPR after install
-dnf5 -y copr disable solopasha/hyprland
+dnf5 -y copr disable ashbuk/Hyprland-Fedora
+
+# -----------------------------------------------------------------------------
+# Install build dependencies
+# -----------------------------------------------------------------------------
+dnf5 install -y \
+    cmake \
+    ninja-build \
+    gcc-c++ \
+    git \
+    meson \
+    wayland-devel \
+    wayland-protocols-devel \
+    cairo-devel \
+    pango-devel \
+    libdrm-devel \
+    mesa-libgbm-devel \
+    mesa-libEGL-devel \
+    libxkbcommon-devel \
+    libjpeg-turbo-devel \
+    libwebp-devel \
+    file-devel \
+    pam-devel \
+    sdbus-cpp-devel \
+    systemd-devel \
+    pixman-devel \
+    libglvnd-devel \
+    hwdata-devel \
+    libdisplay-info-devel \
+    tomlplusplus-devel \
+    zip \
+    librsvg2-devel \
+    libxcb-devel \
+    xcb-util-devel \
+    xcb-util-image-devel \
+    xcb-util-renderutil-devel \
+    xcb-util-wm-devel
+
+# Create build directory
+BUILD_DIR="/tmp/hypr-build"
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build hyprwayland-scanner (needed for building hypr tools)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprwayland-scanner.git
+cd hyprwayland-scanner
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build hyprlang (config language library)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprlang.git
+cd hyprlang
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build hyprutils (utility library)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprutils.git
+cd hyprutils
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build hyprcursor (cursor library)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprcursor.git
+cd hyprcursor
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build hyprgraphics (graphics library)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprgraphics.git
+cd hyprgraphics
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# Update library cache
+ldconfig
+
+# -----------------------------------------------------------------------------
+# Build and install hyprpaper (wallpaper utility)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprpaper.git
+cd hyprpaper
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build and install hypridle (idle daemon)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hypridle.git
+cd hypridle
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build and install hyprlock (screen locker)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprlock.git
+cd hyprlock
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build and install hyprsunset (blue light filter)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprsunset.git
+cd hyprsunset
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build and install hyprpicker (color picker)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprpicker.git
+cd hyprpicker
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Cleanup build directory and build-only dependencies
+# -----------------------------------------------------------------------------
+cd /
+rm -rf "$BUILD_DIR"
+
+# Remove build-only packages to reduce image size
+dnf5 remove -y \
+    cmake \
+    ninja-build \
+    gcc-c++ \
+    git \
+    meson \
+    || true
+
+# Clean dnf cache
+dnf5 clean all
+
+# -----------------------------------------------------------------------------
+# Install other Hyprland ecosystem tools from repos
+# -----------------------------------------------------------------------------
 
 # Install status bar and launcher
 dnf5 install -y \
@@ -25,7 +193,7 @@ dnf5 install -y \
 # Install notification daemon
 dnf5 install -y mako
 
-# Install clipboard tools (wl-clipboard should be pre-installed)
+# Install clipboard tools
 dnf5 install -y wl-clipboard || true
 
 # Install cliphist from COPR (clipboard history)
@@ -36,15 +204,15 @@ dnf5 -y copr disable atim/starship || true
 # SwayOSD - try to install, skip if not available
 dnf5 install -y SwayOSD || echo "SwayOSD not available, using alternative volume controls"
 
-# Install screenshot tool
+# Install screenshot tools
 dnf5 install -y \
     grim \
     slurp
 
-# Check if hyprshot is available, otherwise we'll use grim+slurp
+# Check if hyprshot is available
 dnf5 install -y hyprshot || echo "hyprshot not available, using grim+slurp"
 
-# Install utilities (most are pre-installed in sway-atomic)
+# Install utilities
 dnf5 install -y --skip-unavailable \
     playerctl \
     brightnessctl \
@@ -62,7 +230,9 @@ dnf5 install -y \
     jetbrains-mono-fonts-all \
     fontawesome-fonts-all
 
+# -----------------------------------------------------------------------------
 # Copy Hyprland configuration to skeleton
+# -----------------------------------------------------------------------------
 mkdir -p /etc/skel/.config
 cp -r /ctx/config/hypr /etc/skel/.config/
 cp -r /ctx/config/waybar /etc/skel/.config/
