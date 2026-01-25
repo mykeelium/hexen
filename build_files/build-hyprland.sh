@@ -14,7 +14,6 @@ set -ouex pipefail
 dnf5 -y copr enable ashbuk/Hyprland-Fedora
 
 dnf5 install -y \
-    hyprland \
     xdg-desktop-portal-hyprland
 
 dnf5 -y copr disable ashbuk/Hyprland-Fedora
@@ -49,6 +48,8 @@ dnf5 install -y \
     tomlplusplus-devel \
     zip \
     librsvg2-devel \
+    libX11-devel \
+    pixman-devel \
     libxcb-devel \
     xcb-util-devel \
     xcb-util-image-devel \
@@ -59,7 +60,18 @@ dnf5 install -y \
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
 mkdir -p "$BUILD_DIR"
+mkdir -p /usr/local/share/wayland-sessions
+mkdir -p /usr/share/wayland-sessions/
 cd "$BUILD_DIR"
+
+# build hprland from source
+git clone --recursive https://github.com/hyprwm/Hyprland
+pushd Hyprland
+menson _build
+ninja -C _build
+ninja -c _build install
+cp /usr/local/share/wayland-sessions/hyprland.desktop /usr/share/wayland-sessions/
+popd
 
 # -----------------------------------------------------------------------------
 # Build hyprwayland-scanner (needed for building hypr tools)
