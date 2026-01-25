@@ -1,6 +1,7 @@
-# Allow build scripts to be referenced without being copied into the final image
+# Allow build scripts and config to be referenced without being copied into the final image
 FROM scratch AS ctx
 COPY build_files /
+COPY config /config
 
 # Base Image
 FROM quay.io/fedora-ostree-desktops/sway-atomic:43
