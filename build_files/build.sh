@@ -1,6 +1,7 @@
 #!/bin/bash
 
 set -ouex pipefail
+mkdir -p /tmp/
 
 ### Install packages
 
@@ -25,8 +26,54 @@ dnf5 install -y golang
 
 
 # gopls
-# GOBIN=/usr/local/bin GOPATH=/tmp/go HOME=/tmp go install golang.org/x/tools/gopls@latest
 GOBIN=/usr/bin GOMODCACHE=/tmp/go-mod HOME=/tmp go install golang.org/x/tools/gopls@latest
+# go packages
+mkdir -p /usr/share/go/pkg/mod-cache
+pushd /tmp
+cat > go.mod << 'GOMOD'
+module preload
+
+go 1.25
+
+require (
+    github.com/gorilla/handlers v1.5.2
+    github.com/gorilla/mux v1.8.1
+    github.com/gorilla/schema v1.4.1
+    github.com/go-chi/chi/v5 v5.1.0
+    github.com/labstack/echo/v4 v4.12.0
+    gorm.io/gorm v1.25.12
+    gorm.io/driver/postgres v1.5.9
+    gorm.io/driver/sqlite v1.5.6
+    github.com/lib/pq v1.10.9
+    github.com/pkg/errors v0.9.1
+    github.com/redis/go-redis/v9 v9.7.0
+    github.com/spf13/viper v1.19.0
+    github.com/spf13/cobra v1.8.1
+    github.com/sirupsen/logrus v1.9.3
+    github.com/golang-jwt/jwt/v5 v5.2.1
+    golang.org/x/crypto v0.47.0
+    golang.org/x/mod v0.32.0
+    golang.org/x/oauth2 v0.32.0
+    golang.org/x/text v0.33.0
+    golang.org/x/tools v0.41.0
+    go.uber.org/mock v0.5.2
+    gotest.tools v2.2.0+incompatible
+)
+GOMOD
+
+GOMODCACHE=/usr/share/go/pkg/mod-cache HOME=/tmp go mod download -x
+popd
+chmod -R 755 /usr/share/go
+
+# add pachage cache so users have access
+cat > /etc/profile.d/go-env.sh << 'EOF'
+# Use system-wide Go module cache as fallback
+if [ ! -d "$HOME/go/pkg/mod" ] && [ -d "/usr/share/go/pkg/mod-cache" ]; then
+  mkdir -p "$HOME/go/pkg"
+  cp -r /usr/share/go/pkg/mod-cache "$HOME/go/pkg/mod"
+fi
+EOF
+chmod 644 /etc/profile.d/go-env.sh
 
 # COPR
 
@@ -54,7 +101,6 @@ dnf5 -y copr disable varlad/zellij
 systemctl enable podman.socket
 
 # Configuration
-mkdir -p /tmp/
 
 # TODO: remove if neovim packaing works
 # package.path = "/usr/share/nvim/config/?.lua;/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
