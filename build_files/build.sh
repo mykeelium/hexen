@@ -56,16 +56,14 @@ mkdir -p /tmp/
 
 # neovim
 mkdir -p /usr/share/nvim
-cat > /usr/bin/nvim-system <<'EOF'
-#!/bin/sh
-export HOME=/var/lib/nvim
-export XDG_CONFIG_HOME=/usr/share
-export XDG_DATA_HOME=/usr/share
-export XDG_STATE_HOME=/var/lib/nvim
-exec /usr/bin/nvim "$@"
-EOF
+mkdir -p /usr/share/nvim/config
+mkdir -p /usr/share/nvim/lazy
+mkdir -p /usr/share/nvim/plugins
+mkdir -p /var/lib/nvim/lazy
 
-chmod +x /usr/bin/nvim-system
+git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
+git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
+cp -a /tmp/nvim-config/pack/. /usr/share/nvim/config/
 
 cat > /usr/share/nvim/init.lua <<'EOF'
 package.path = "/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
@@ -77,32 +75,19 @@ if not vim.loop.fs_stat(lazypath) then
   return
 end
 
-
 require("machine")
 EOF
-mkdir -p /usr/share/nvim/lazy
-mkdir -p /var/lib/nvim/lazy
-mkdir -p /usr/share/nvim/config
-git clone https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
-git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
-# this command might return an error, but we want to continue regardless
-mv /tmp/nvim-config/pack/* /tmp/nvim-config/pack/.* /usr/share/nvim/config || :
+
+# Create symlink for user skeleton
 mkdir -p /etc/skel/.config
 ln -s /usr/share/nvim /etc/skel/.config/nvim
 
-# NVIM_APPNAME=nvim \
-# XDG_DATA_HOME=/usr/share \
-# XDG_STATE_HOME=/var/lib/nvim \
-
-# nvim-system --headless "Lazy! sync" -c "qa"
-
+NVIM_APPNAME=nvim \
 HOME=/var/lib/nvim \
 XDG_CONFIG_HOME=/usr/share \
 XDG_DATA_HOME=/usr/share \
 XDG_STATE_HOME=/var/lib/nvim \
-nvim-system --headless \
-  "+Lazy! sync" \
-  +qa
+nvim --headless "+Lazy! restore" +qa
 
 chmod -R 755 /usr/share/nvim 
 chmod -R 755 /var/lib/nvim
