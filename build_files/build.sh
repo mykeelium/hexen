@@ -62,7 +62,7 @@ mkdir -p /var/lib/nvim/lazy
 
 git clone --filter=blob:none --branch=stable https://github.com/folke/lazy.nvim.git /usr/share/nvim/lazy
 git clone https://github.com/mykeelium/nvim-config.git /tmp/nvim-config
-cp -a /tmp/nvim-config/pack/. /usr/share/nvim/config/
+cp -a /tmp/nvim-config/pack/. /usr/share/nvim/
 
 # Create symlink for user skeleton
 mkdir -p /etc/skel/.config
