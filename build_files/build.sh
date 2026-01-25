@@ -29,7 +29,8 @@ dnf5 install -y golang
 GOBIN=/usr/bin GOMODCACHE=/tmp/go-mod HOME=/tmp go install golang.org/x/tools/gopls@latest
 # go packages
 mkdir -p /usr/share/go/pkg/mod-cache
-pushd /tmp
+mkdir -p /var/lib/go-build
+pushd /var/lib/go-build
 cat > go.mod << 'GOMOD'
 module preload
 
@@ -61,8 +62,9 @@ require (
 )
 GOMOD
 
-GOMODCACHE=/usr/share/go/pkg/mod-cache HOME=/tmp go mod download -x
+GOMODCACHE=/usr/share/go/pkg/mod-cache HOME=/var/lib/go-build go mod download -x
 popd
+rm -rf /var/lib/go-build
 chmod -R 755 /usr/share/go
 
 # add pachage cache so users have access
