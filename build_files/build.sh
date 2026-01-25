@@ -79,7 +79,6 @@ chmod 644 /etc/profile.d/go-env.sh
 # zed
 mkdir -p /usr/share/zed
 curl -L https://zed.dev/api/releases/stable/latest/zed-linux-x86_64.tar.gz | tar -xz -C /usr/share/zed --strip-components=1
-ln -s /usr/share/zed/bin/zed /usr/bin/zed
 
 # create desktop file
 cat > /usr/share/applications/zed.desktop << 'EOF'
