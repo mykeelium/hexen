@@ -94,7 +94,16 @@ ln -s /usr/share/nvim /etc/skel/.config/nvim
 # XDG_DATA_HOME=/usr/share \
 # XDG_STATE_HOME=/var/lib/nvim \
 
-nvim-system --headless "Lazy! sync" -c "qa"
+# nvim-system --headless "Lazy! sync" -c "qa"
+
+HOME=/var/lib/nvim \
+XDG_CONFIG_HOME=/usr/share \
+XDG_DATA_HOME=/usr/share \
+XDG_STATE_HOME=/var/lib/nvim \
+nvim-system --headless \
+  "+Lazy! sync" \
+  +qa
+
 chmod -R 755 /usr/share/nvim 
 chmod -R 755 /var/lib/nvim
 
