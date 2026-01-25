@@ -17,9 +17,8 @@ dnf5 install -y libfido2
 dnf5 install -y neovim python3-neovim
 dnf5 install -y ripgrep
 dnf5 install -y golang
-
-# might need to use terrapkg - see: https://github.com/terrapkg/packages/tree/frawhide
-# dnf5 install -y zed
+dnf5 install -y postgresql
+dnf5 install -y python3.12
 
 # flatpak?
 # dnf5 install -y obsidian
@@ -76,6 +75,10 @@ if [ ! -d "$HOME/go/pkg/mod" ] && [ -d "/usr/share/go/pkg/mod-cache" ]; then
 fi
 EOF
 chmod 644 /etc/profile.d/go-env.sh
+
+# zed
+curl -L https://zed.dev/api/releases/stable/latest/zed-linux-x86_64.tar.gz | tar -xz -C /usr/local
+ln -s /usr/local/zed.app/bin/zed /usr/local/bin/zed
 
 # COPR
 
