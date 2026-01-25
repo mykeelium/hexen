@@ -57,7 +57,8 @@ dnf5 install -y \
     xcb-util-image-devel \
     xcb-util-renderutil-devel \
     xcb-util-wm-devel \
-    pugixml-devel
+    pugixml-devel \
+    libseat-devel
 
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
@@ -67,11 +68,31 @@ cd "$BUILD_DIR"
 
 # build hyprland from source
 
+# build wayland-protocols
+git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
+cd wayland-protocols
+meson setup _build . --prefix=/usr --wrap-mode=nodownload
+ninja -C _build
+ninja -C _build install
+cd "$BUILD_DIR"
+
+pkg-config --modversion wayland-protocols
+
 # -----------------------------------------------------------------------------
 # Build hyprwayland-scanner (needed for building hypr tools)
 # -----------------------------------------------------------------------------
 git clone --depth 1 https://github.com/hyprwm/hyprwayland-scanner.git
 cd hyprwayland-scanner
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
+# Build hyprutils (utility library)
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprutils.git
+cd hyprutils
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 ninja -C build
 ninja -C build install
@@ -88,15 +109,6 @@ ninja -C build install
 cd "$BUILD_DIR"
 
 
-# build wayland-protocols
-git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
-cd wayland-protocols
-meson setup _build . --prefix=/usr --wrap-mode=nodownload
-ninja -C _build
-ninja -C _build install
-cd "$BUILD_DIR"
-
-pkg-config --modversion wayland-protocols
 
 # build hyprland directly
 git clone --recursive https://github.com/hyprwm/Hyprland
@@ -118,15 +130,6 @@ ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
-# -----------------------------------------------------------------------------
-# Build hyprutils (utility library)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprutils.git
-cd hyprutils
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
 # Build hyprcursor (cursor library)
