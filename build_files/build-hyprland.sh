@@ -60,17 +60,15 @@ dnf5 install -y \
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
 mkdir -p "$BUILD_DIR"
-mkdir /usr/local/share/wayland-sessions
-mkdir /usr/share/wayland-sessions/
+mkdir -p /usr/share/wayland-sessions/
 cd "$BUILD_DIR"
 
 # build hprland from source
 git clone --recursive https://github.com/hyprwm/Hyprland
 pushd Hyprland
-menson _build
+meson setup _build --prefix=/usr
 ninja -C _build
-ninja -c _build install
-cp /usr/local/share/wayland-sessions/hyprland.desktop /usr/share/wayland-sessions/
+ninja -C _build install
 popd
 
 # -----------------------------------------------------------------------------
