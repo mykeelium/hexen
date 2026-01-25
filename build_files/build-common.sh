@@ -1,4 +1,5 @@
 #!/bin/bash
+set -oouex pipefail
 
 set -ouex pipefail
 mkdir -p /tmp/
@@ -9,19 +10,16 @@ mkdir -p /tmp/
 # RPMfusion repos are available by default in ublue main images
 # List of rpmfusion packages can be found here:
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
-dnf5 install -y btop 
-dnf5 install -y clang
-dnf5 install -y fzf # cli fuzzy find
-dnf5 install -y git
-dnf5 install -y libfido2
-dnf5 install -y neovim python3-neovim
-dnf5 install -y ripgrep
-dnf5 install -y golang
-dnf5 install -y postgresql
-dnf5 install -y python3.12
+dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12
 
-# flatpak?
-# dnf5 install -y obsidian
+# COPR
+dnf5 -y copr enable scottames/ghostty && dnf5 install -y ghostty dnf5 -y copr disable scottames/ghostty
+dnf5 -y copr enable dejan/lazygit dnf5 install -y lazygit dnf5 -y copr disable dejan/lazygit
+dnf5 -y copr enable varlad/zellij dnf5 install -y zellij dnf5 -y copr disable varlad/zellij
+
+# dnf5 -y copr enable sneexy/zen-browser
+# dnf5 install -y zen-browser
+# dnf5 -y copr disable sneexy/zen-browser
 
 
 # gopls
@@ -76,6 +74,7 @@ fi
 EOF
 chmod 644 /etc/profile.d/go-env.sh
 
+
 # zed
 mkdir -p /usr/share/zed
 curl -L https://zed.dev/api/releases/stable/latest/zed-linux-x86_64.tar.gz | tar -xz -C /usr/share/zed --strip-components=1
@@ -91,35 +90,11 @@ Categories=Development;IDE;
 MimeType=text/plain;
 EOF
 
-# COPR
-
-# Enable and Install
-dnf5 -y copr enable scottames/ghostty
-dnf5 install -y ghostty
-
-dnf5 -y copr enable dejan/lazygit
-dnf5 install -y lazygit
-
-# dnf5 -y copr enable sneexy/zen-browser
-# dnf5 install -y zen-browser
-
-dnf5 -y copr enable varlad/zellij
-dnf5 install -y zellij
-
-# Disable
-dnf5 -y copr disable scottames/ghostty
-dnf5 -y copr disable dejan/lazygit
-# dnf5 -y copr disable sneexy/zen-browser
-dnf5 -y copr disable varlad/zellij
 
 #### Example for enabling a System Unit File
-
 systemctl enable podman.socket
 
 # Configuration
-
-# TODO: remove if neovim packaing works
-# package.path = "/usr/share/nvim/config/?.lua;/usr/share/nvim/config/lua/?.lua;/usr/share/nvim/config/lua/?/init.lua;" .. package.path
 
 # neovim
 mkdir -p /usr/share/nvim
