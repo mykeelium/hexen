@@ -101,7 +101,7 @@ cd "$BUILD_DIR"
 # build aquamarine
 git clone https://github.com/hyprwm/aquamarine.git
 cd aquamarine
-cmake -S . -B build \
+cmake -S . -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr
 ninja -C build
