@@ -182,6 +182,19 @@ ninja -C build install
 cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
+# Build hyprtoolkit (toolkit library) - needed by hyprpaper and other utils
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprtoolkit.git
+cd hyprtoolkit
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# Update library cache
+ldconfig
+
+# -----------------------------------------------------------------------------
 # Build and install hyprpaper (wallpaper utility)
 # -----------------------------------------------------------------------------
 git clone --depth 1 https://github.com/hyprwm/hyprpaper.git
