@@ -163,7 +163,7 @@ ldconfig
 # -----------------------------------------------------------------------------
 git clone --recursive https://github.com/hyprwm/Hyprland
 cd Hyprland
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
