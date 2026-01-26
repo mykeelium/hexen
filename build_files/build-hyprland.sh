@@ -145,11 +145,21 @@ ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
+# -----------------------------------------------------------------------------
+# Build hyprwire (IPC library) - MUST be before Hyprland
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprwire.git
+cd hyprwire
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
 # Update library cache before building Hyprland
 ldconfig
 
 # -----------------------------------------------------------------------------
-# Build Hyprland (requires: hyprcursor, hyprgraphics, aquamarine, hyprlang, hyprutils)
+# Build Hyprland (requires: hyprcursor, hyprgraphics, aquamarine, hyprlang, hyprutils, hyprwire)
 # -----------------------------------------------------------------------------
 git clone --recursive https://github.com/hyprwm/Hyprland
 cd Hyprland
