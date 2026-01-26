@@ -108,32 +108,8 @@ ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
-# build aquamarine
-git clone https://github.com/hyprwm/aquamarine.git
-cd aquamarine
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
-
-
-
-# build hyprland directly
-git clone --recursive https://github.com/hyprwm/Hyprland
-cd Hyprland
-cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
-ls build/build.ninja
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
-
-
-
-
 # -----------------------------------------------------------------------------
-# Build hyprcursor (cursor library)
+# Build hyprcursor (cursor library) - MUST be before Hyprland
 # -----------------------------------------------------------------------------
 git clone --depth 1 https://github.com/hyprwm/hyprcursor.git
 cd hyprcursor
@@ -143,7 +119,7 @@ ninja -C build install
 cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
-# Build hyprgraphics (graphics library)
+# Build hyprgraphics (graphics library) - MUST be before Hyprland
 # -----------------------------------------------------------------------------
 git clone --depth 1 https://github.com/hyprwm/hyprgraphics.git
 cd hyprgraphics
@@ -152,8 +128,30 @@ ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
-# Update library cache
+# -----------------------------------------------------------------------------
+# Build aquamarine (backend library)
+# -----------------------------------------------------------------------------
+git clone https://github.com/hyprwm/aquamarine.git
+cd aquamarine
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# Update library cache before building Hyprland
 ldconfig
+
+# -----------------------------------------------------------------------------
+# Build Hyprland (requires: hyprcursor, hyprgraphics, aquamarine, hyprlang, hyprutils)
+# -----------------------------------------------------------------------------
+git clone --recursive https://github.com/hyprwm/Hyprland
+cd Hyprland
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
 # Build and install hyprpaper (wallpaper utility)
