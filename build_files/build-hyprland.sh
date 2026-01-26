@@ -63,7 +63,8 @@ dnf5 install -y \
     libuuid-devel \
     libXcursor-devel \
     re2-devel \
-    muParser-devel
+    muParser-devel \
+    iniparser-devel
 
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
