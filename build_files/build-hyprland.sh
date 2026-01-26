@@ -155,6 +155,16 @@ ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
+# -----------------------------------------------------------------------------
+# Build glaze (C++ JSON library) - MUST be before Hyprland
+# -----------------------------------------------------------------------------
+git clone --depth 1 --branch v6.1.0 https://github.com/stephenberry/glaze.git
+cd glaze
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -Dglaze_ENABLE_FUZZING=OFF
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
 # Update library cache before building Hyprland
 ldconfig
 
