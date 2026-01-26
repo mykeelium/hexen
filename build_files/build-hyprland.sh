@@ -59,7 +59,11 @@ dnf5 install -y \
     xcb-util-wm-devel \
     pugixml-devel \
     libseat-devel \
-    libzip-devel
+    libzip-devel \
+    libuuid-devel \
+    libXcursor-devel \
+    re2-devel \
+    muparser-devel
 
 # Create build directory
 BUILD_DIR="/tmp/hypr-build"
