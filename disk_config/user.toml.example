@@ -1,0 +1,13 @@
+# Copy this file to user.toml and customize
+# user.toml is gitignored and will be merged with disk.toml at build time
+
+[[customizations.user]]
+name = "admin"
+password = "changeme"
+groups = ["wheel"]
+
+# Alternative: use SSH key instead of password (more secure)
+# [[customizations.user]]
+# name = "admin"
+# groups = ["wheel"]
+# key = "ssh-ed25519 AAAA... your-key-here"
