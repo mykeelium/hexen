@@ -188,6 +188,19 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
 
     BUILDTMP=$(mktemp -p "${PWD}" -d -t _build-bib.XXXXXXXXXX)
 
+    # Merge user.toml with base config if it exists
+    USER_CONFIG="disk_config/user.toml"
+    if [[ -f "$USER_CONFIG" ]]; then
+        echo "Merging ${USER_CONFIG} with ${config}..."
+        MERGED_CONFIG=$(mktemp -p "${PWD}" -t merged-config.XXXXXXXXXX.toml)
+        cat "${config}" "$USER_CONFIG" > "$MERGED_CONFIG"
+        CONFIG_TO_USE="$MERGED_CONFIG"
+    else
+        echo "No user.toml found - building without default user"
+        echo "Tip: Copy disk_config/user.toml.example to disk_config/user.toml to add a default user"
+        CONFIG_TO_USE="${config}"
+    fi
+
     sudo podman run \
       --rm \
       -it \
@@ -195,12 +208,17 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
       --pull=newer \
       --net=host \
       --security-opt label=type:unconfined_t \
-      -v $(pwd)/${config}:/config.toml:ro \
+      -v $(pwd)/${CONFIG_TO_USE}:/config.toml:ro \
       -v $BUILDTMP:/output \
       -v /var/lib/containers/storage:/var/lib/containers/storage \
       "${bib_image}" \
       ${args} \
       "${target_image}:${tag}"
+
+    # Cleanup merged config if created
+    if [[ -f "${MERGED_CONFIG:-}" ]]; then
+        rm -f "$MERGED_CONFIG"
+    fi
 
     mkdir -p output
     sudo mv -f $BUILDTMP/* output/
