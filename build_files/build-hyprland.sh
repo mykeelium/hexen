@@ -4,22 +4,111 @@ set -ouex pipefail
 # =============================================================================
 # Hyprland 0.53+ Build Script for Fedora
 # =============================================================================
-# Uses ashbuk COPR for Hyprland core (0.53.1+) and builds utilities from source
-# to ensure compatibility with the new window rule syntax.
+# Optimized with parallel compilation and build caching.
+# Uses ashbuk COPR for xdg-desktop-portal-hyprland and builds everything else
+# from source to ensure compatibility.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Install Hyprland core from ashbuk COPR (has 0.53.1+)
+# Configuration
+# -----------------------------------------------------------------------------
+BUILD_DIR="/var/hypr-build"
+PIDS=()
+FAILED=0
+
+# -----------------------------------------------------------------------------
+# Helper Functions
+# -----------------------------------------------------------------------------
+
+# Run a command in the background and track its PID
+run_parallel() {
+    "$@" &
+    PIDS+=($!)
+}
+
+# Wait for all parallel jobs and fail if any failed
+wait_all() {
+    local failed=0
+    for pid in "${PIDS[@]}"; do
+        if ! wait "$pid"; then
+            failed=1
+        fi
+    done
+    PIDS=()
+    if [ "$failed" -ne 0 ]; then
+        echo "ERROR: One or more parallel builds failed"
+        exit 1
+    fi
+}
+
+# Clone or update a git repository (enables incremental builds with caching)
+git_clone_or_update() {
+    local repo_url="$1"
+    local dir_name="$2"
+    local branch="${3:-}"
+    local depth="${4:---depth 1}"
+
+    if [ -d "$dir_name/.git" ]; then
+        echo "Updating existing clone: $dir_name"
+        cd "$dir_name"
+        git fetch --all
+        if [ -n "$branch" ]; then
+            git checkout "$branch"
+            git reset --hard "origin/$branch" 2>/dev/null || git reset --hard "$branch"
+        else
+            git reset --hard origin/HEAD 2>/dev/null || git pull
+        fi
+        cd "$BUILD_DIR"
+    else
+        echo "Fresh clone: $dir_name"
+        rm -rf "$dir_name"
+        if [ -n "$branch" ]; then
+            git clone $depth --branch "$branch" "$repo_url" "$dir_name"
+        else
+            git clone $depth "$repo_url" "$dir_name"
+        fi
+    fi
+}
+
+# Build a cmake project
+build_cmake_project() {
+    local name="$1"
+    local extra_args="${2:-}"
+
+    echo "Building $name..."
+    cd "$BUILD_DIR/$name"
+    rm -rf build
+    cmake -B build -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        $extra_args
+    ninja -C build
+    ninja -C build install
+    echo "Completed $name"
+    cd "$BUILD_DIR"
+}
+
+# Build a meson project
+build_meson_project() {
+    local name="$1"
+    local extra_args="${2:-}"
+
+    echo "Building $name..."
+    cd "$BUILD_DIR/$name"
+    rm -rf _build
+    meson setup _build . --prefix=/usr --wrap-mode=nodownload $extra_args
+    ninja -C _build
+    ninja -C _build install
+    echo "Completed $name"
+    cd "$BUILD_DIR"
+}
+
+# -----------------------------------------------------------------------------
+# Install xdg-desktop-portal-hyprland from ashbuk COPR
 # -----------------------------------------------------------------------------
 dnf5 -y copr enable ashbuk/Hyprland-Fedora
-
-dnf5 install -y \
-    xdg-desktop-portal-hyprland
-
+dnf5 install -y xdg-desktop-portal-hyprland
 dnf5 -y copr disable ashbuk/Hyprland-Fedora
-
-# packages I might be coming back to
-# wayland-protocols-devel \
 
 # -----------------------------------------------------------------------------
 # Install build dependencies
@@ -66,200 +155,148 @@ dnf5 install -y \
     muParser-devel \
     iniparser-devel
 
-# Create build directory
-BUILD_DIR="/tmp/hypr-build"
+# -----------------------------------------------------------------------------
+# Setup build directory
+# -----------------------------------------------------------------------------
 mkdir -p "$BUILD_DIR"
 mkdir -p /usr/share/wayland-sessions/
 cd "$BUILD_DIR"
 
-# build hyprland from source
+# =============================================================================
+# PHASE 0: No dependencies (can run in parallel)
+# - wayland-protocols
+# - glaze
+# =============================================================================
+echo "=== PHASE 0: Building base dependencies ==="
 
-# build wayland-protocols
-git clone https://gitlab.freedesktop.org/wayland/wayland-protocols.git
-cd wayland-protocols
-meson setup _build . --prefix=/usr --wrap-mode=nodownload
-ninja -C _build
-ninja -C _build install
-cd "$BUILD_DIR"
+git_clone_or_update "https://gitlab.freedesktop.org/wayland/wayland-protocols.git" "wayland-protocols" "" ""
+git_clone_or_update "https://github.com/stephenberry/glaze.git" "glaze" "v6.1.0" "--depth 1"
+
+run_parallel build_meson_project "wayland-protocols"
+run_parallel build_cmake_project "glaze" "-Dglaze_ENABLE_FUZZING=OFF -Dglaze_BUILD_TESTS=OFF -DBUILD_TESTING=OFF"
+wait_all
 
 pkg-config --modversion wayland-protocols
 
-# -----------------------------------------------------------------------------
-# Build hyprwayland-scanner (needed for building hypr tools)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprwayland-scanner.git
-cd hyprwayland-scanner
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+# =============================================================================
+# PHASE 1: Depends only on wayland-protocols (can run in parallel)
+# - hyprwayland-scanner
+# - hyprutils
+# =============================================================================
+echo "=== PHASE 1: Building hyprwayland-scanner and hyprutils ==="
 
-# -----------------------------------------------------------------------------
-# Build hyprutils (utility library)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprutils.git
-cd hyprutils
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+git_clone_or_update "https://github.com/hyprwm/hyprwayland-scanner.git" "hyprwayland-scanner"
+git_clone_or_update "https://github.com/hyprwm/hyprutils.git" "hyprutils"
 
-# -----------------------------------------------------------------------------
-# Build hyprlang (config language library)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprlang.git
-cd hyprlang
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+run_parallel build_cmake_project "hyprwayland-scanner"
+run_parallel build_cmake_project "hyprutils"
+wait_all
 
-# -----------------------------------------------------------------------------
-# Build hyprcursor (cursor library) - MUST be before Hyprland
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprcursor.git
-cd hyprcursor
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+# =============================================================================
+# PHASE 2: Depends on hyprutils (can run in parallel)
+# - hyprlang
+# - hyprgraphics
+# - hyprwire
+# =============================================================================
+echo "=== PHASE 2: Building hyprlang, hyprgraphics, hyprwire ==="
 
-# -----------------------------------------------------------------------------
-# Build hyprgraphics (graphics library) - MUST be before Hyprland
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprgraphics.git
-cd hyprgraphics
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+git_clone_or_update "https://github.com/hyprwm/hyprlang.git" "hyprlang"
+git_clone_or_update "https://github.com/hyprwm/hyprgraphics.git" "hyprgraphics"
+git_clone_or_update "https://github.com/hyprwm/hyprwire.git" "hyprwire"
 
-# -----------------------------------------------------------------------------
-# Build aquamarine (backend library)
-# -----------------------------------------------------------------------------
-git clone https://github.com/hyprwm/aquamarine.git
-cd aquamarine
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+run_parallel build_cmake_project "hyprlang"
+run_parallel build_cmake_project "hyprgraphics"
+run_parallel build_cmake_project "hyprwire"
+wait_all
 
-# -----------------------------------------------------------------------------
-# Build hyprwire (IPC library) - MUST be before Hyprland
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprwire.git
-cd hyprwire
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+# =============================================================================
+# PHASE 3: Depends on hyprlang (can run in parallel)
+# - hyprcursor
+# - aquamarine
+# =============================================================================
+echo "=== PHASE 3: Building hyprcursor and aquamarine ==="
 
-# -----------------------------------------------------------------------------
-# Build glaze (C++ JSON library) - MUST be before Hyprland
-# -----------------------------------------------------------------------------
-git clone --depth 1 --branch v6.1.0 https://github.com/stephenberry/glaze.git
-cd glaze
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
-    -Dglaze_ENABLE_FUZZING=OFF \
-    -Dglaze_BUILD_TESTS=OFF \
-    -DBUILD_TESTING=OFF
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+git_clone_or_update "https://github.com/hyprwm/hyprcursor.git" "hyprcursor"
+git_clone_or_update "https://github.com/hyprwm/aquamarine.git" "aquamarine" "" ""
+
+run_parallel build_cmake_project "hyprcursor"
+run_parallel build_cmake_project "aquamarine"
+wait_all
 
 # Update library cache before building Hyprland
 ldconfig
 
-# -----------------------------------------------------------------------------
-# Build Hyprland (requires: hyprcursor, hyprgraphics, aquamarine, hyprlang, hyprutils, hyprwire)
-# -----------------------------------------------------------------------------
-git clone --recursive https://github.com/hyprwm/Hyprland
-cd Hyprland
+# =============================================================================
+# PHASE 4: Hyprland (sequential - needs all above)
+# =============================================================================
+echo "=== PHASE 4: Building Hyprland ==="
+
+# Hyprland needs full clone for submodules
+if [ -d "Hyprland/.git" ]; then
+    echo "Updating existing Hyprland clone"
+    cd Hyprland
+    git fetch --all
+    git reset --hard origin/main
+    git submodule update --init --recursive
+    cd "$BUILD_DIR"
+else
+    rm -rf Hyprland
+    git clone --recursive https://github.com/hyprwm/Hyprland
+fi
+
+cd "$BUILD_DIR/Hyprland"
+rm -rf build
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
 
-# -----------------------------------------------------------------------------
-# Build hyprland-protocols (protocol definitions) - needed by utilities
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprland-protocols.git
-cd hyprland-protocols
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+# =============================================================================
+# PHASE 5: Depends on Hyprland (can run in parallel)
+# - hyprland-protocols
+# - hyprtoolkit
+# =============================================================================
+echo "=== PHASE 5: Building hyprland-protocols and hyprtoolkit ==="
 
-# -----------------------------------------------------------------------------
-# Build hyprtoolkit (toolkit library) - needed by hyprpaper and other utils
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprtoolkit.git
-cd hyprtoolkit
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+git_clone_or_update "https://github.com/hyprwm/hyprland-protocols.git" "hyprland-protocols"
+git_clone_or_update "https://github.com/hyprwm/hyprtoolkit.git" "hyprtoolkit"
+
+run_parallel build_cmake_project "hyprland-protocols"
+run_parallel build_cmake_project "hyprtoolkit"
+wait_all
 
 # Update library cache
 ldconfig
 
-# -----------------------------------------------------------------------------
-# Build and install hyprpaper (wallpaper utility)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprpaper.git
-cd hyprpaper
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
+# =============================================================================
+# PHASE 6: Hyprland utilities (can all run in parallel)
+# - hyprpaper
+# - hypridle
+# - hyprlock
+# - hyprsunset
+# - hyprpicker
+# =============================================================================
+echo "=== PHASE 6: Building Hyprland utilities ==="
+
+git_clone_or_update "https://github.com/hyprwm/hyprpaper.git" "hyprpaper"
+git_clone_or_update "https://github.com/hyprwm/hypridle.git" "hypridle"
+git_clone_or_update "https://github.com/hyprwm/hyprlock.git" "hyprlock"
+git_clone_or_update "https://github.com/hyprwm/hyprsunset.git" "hyprsunset"
+git_clone_or_update "https://github.com/hyprwm/hyprpicker.git" "hyprpicker"
+
+run_parallel build_cmake_project "hyprpaper"
+run_parallel build_cmake_project "hypridle"
+run_parallel build_cmake_project "hyprlock"
+run_parallel build_cmake_project "hyprsunset"
+run_parallel build_cmake_project "hyprpicker"
+wait_all
+
+echo "=== All Hyprland components built successfully ==="
 
 # -----------------------------------------------------------------------------
-# Build and install hypridle (idle daemon)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hypridle.git
-cd hypridle
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
-
-# -----------------------------------------------------------------------------
-# Build and install hyprlock (screen locker)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprlock.git
-cd hyprlock
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
-
-# -----------------------------------------------------------------------------
-# Build and install hyprsunset (blue light filter)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprsunset.git
-cd hyprsunset
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
-
-# -----------------------------------------------------------------------------
-# Build and install hyprpicker (color picker)
-# -----------------------------------------------------------------------------
-git clone --depth 1 https://github.com/hyprwm/hyprpicker.git
-cd hyprpicker
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-ninja -C build
-ninja -C build install
-cd "$BUILD_DIR"
-
-# -----------------------------------------------------------------------------
-# Cleanup build directory and build-only dependencies
+# Cleanup build-only dependencies (but keep build dir for caching)
 # -----------------------------------------------------------------------------
 cd /
-rm -rf "$BUILD_DIR"
 
 # Remove build-only packages to reduce image size
 dnf5 remove -y \
