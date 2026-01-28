@@ -275,6 +275,7 @@ ldconfig
 # - hyprsunset
 # - hyprpicker
 # - xdg-desktop-portal-hyprland
+# - hyprland-guiutils
 # =============================================================================
 echo "=== PHASE 6: Building Hyprland utilities ==="
 
@@ -284,6 +285,7 @@ git_clone_or_update "https://github.com/hyprwm/hyprlock.git" "hyprlock"
 git_clone_or_update "https://github.com/hyprwm/hyprsunset.git" "hyprsunset"
 git_clone_or_update "https://github.com/hyprwm/hyprpicker.git" "hyprpicker"
 git_clone_or_update "https://github.com/hyprwm/xdg-desktop-portal-hyprland.git" "xdg-desktop-portal-hyprland"
+git_clone_or_update "https://github.com/hyprwm/hyprland-guiutils.git" "hyprland-guiutils"
 
 run_parallel build_cmake_project "hyprpaper"
 run_parallel build_cmake_project "hypridle"
@@ -291,6 +293,7 @@ run_parallel build_cmake_project "hyprlock"
 run_parallel build_cmake_project "hyprsunset"
 run_parallel build_cmake_project "hyprpicker"
 run_parallel build_cmake_project "xdg-desktop-portal-hyprland"
+run_parallel build_cmake_project "hyprland-guiutils"
 wait_all
 
 echo "=== All Hyprland components built successfully ==="
