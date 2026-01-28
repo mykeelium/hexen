@@ -86,8 +86,17 @@ sudoif command *args:
 #
 
 # Build the image using the specified parameters
-build $target_image=image_name $tag=default_tag:
+# variant: hyprland or cosmic (selects Containerfile.hyprland or Containerfile.cosmic)
+build $variant="hyprland" $target_image=image_name $tag=default_tag:
     #!/usr/bin/env bash
+    set -euo pipefail
+
+    CONTAINERFILE="Containerfile.${variant}"
+    if [[ ! -f "${CONTAINERFILE}" ]]; then
+        echo "Error: ${CONTAINERFILE} not found. Available variants:"
+        ls -1 Containerfile.* 2>/dev/null | sed 's/Containerfile\./  - /'
+        exit 1
+    fi
 
     BUILD_ARGS=()
     if [[ -z "$(git status -s)" ]]; then
@@ -97,8 +106,19 @@ build $target_image=image_name $tag=default_tag:
     podman build \
         "${BUILD_ARGS[@]}" \
         --pull=newer \
+        --file "${CONTAINERFILE}" \
         --tag "${target_image}:${tag}" \
         .
+
+# Build hyprland variant (shortcut)
+[group('Build')]
+build-hyprland $target_image=image_name $tag=default_tag:
+    just build hyprland "{{ target_image }}" "{{ tag }}"
+
+# Build cosmic variant (shortcut)
+[group('Build')]
+build-cosmic $target_image=image_name $tag=default_tag:
+    just build cosmic "{{ target_image }}" "{{ tag }}"
 
 # Command: _rootful_load_image
 # Description: This script checks if the current user is root or running under sudo. If not, it attempts to resolve the image tag using podman inspect.
@@ -194,32 +214,32 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
 #   type: The type of image to build (ex. qcow2, raw, iso)
 #   config: The configuration file to use for the build (deafult: disk_config/disk.toml)
 
-# Example: just _rebuild-bib localhost/fedora latest qcow2 disk_config/disk.toml
-_rebuild-bib $target_image $tag $type $config: (build target_image tag) && (_build-bib target_image tag type config)
+# Example: just _rebuild-bib hyprland localhost/fedora latest qcow2 disk_config/disk.toml
+_rebuild-bib $variant $target_image $tag $type $config: (build variant target_image tag) && (_build-bib target_image tag type config)
 
 # Build a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
-build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "qcow2" "disk_config/disk.toml")
+build-qcow2 $variant="hyprland" $target_image=("localhost/" + image_name) $tag=default_tag: (build variant target_image tag) && (_build-bib target_image tag "qcow2" "disk_config/disk.toml")
 
 # Build a RAW virtual machine image
 [group('Build Virtal Machine Image')]
-build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
+build-raw $variant="hyprland" $target_image=("localhost/" + image_name) $tag=default_tag: (build variant target_image tag) && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
 # Build an ISO virtual machine image
 [group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")
+build-iso $variant="hyprland" $target_image=("localhost/" + image_name) $tag=default_tag: (build variant target_image tag) && (_build-bib target_image tag "iso" "disk_config/iso.toml")
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
-rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "qcow2" "disk_config/disk.toml")
+rebuild-qcow2 $variant="hyprland" $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib variant target_image tag "qcow2" "disk_config/disk.toml")
 
 # Rebuild a RAW virtual machine image
 [group('Build Virtal Machine Image')]
-rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "raw" "disk_config/disk.toml")
+rebuild-raw $variant="hyprland" $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib variant target_image tag "raw" "disk_config/disk.toml")
 
 # Rebuild an ISO virtual machine image
 [group('Build Virtal Machine Image')]
-rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "disk_config/iso.toml")
+rebuild-iso $variant="hyprland" $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib variant target_image tag "iso" "disk_config/iso.toml")
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config:
