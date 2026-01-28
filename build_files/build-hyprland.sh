@@ -183,6 +183,16 @@ ninja -C build install
 cd "$BUILD_DIR"
 
 # -----------------------------------------------------------------------------
+# Build hyprland-protocols (protocol definitions) - needed by utilities
+# -----------------------------------------------------------------------------
+git clone --depth 1 https://github.com/hyprwm/hyprland-protocols.git
+cd hyprland-protocols
+meson setup build --prefix=/usr
+ninja -C build
+ninja -C build install
+cd "$BUILD_DIR"
+
+# -----------------------------------------------------------------------------
 # Build hyprtoolkit (toolkit library) - needed by hyprpaper and other utils
 # -----------------------------------------------------------------------------
 git clone --depth 1 https://github.com/hyprwm/hyprtoolkit.git
