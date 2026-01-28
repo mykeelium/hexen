@@ -190,9 +190,10 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
 
     # Merge user.toml with base config if it exists
     USER_CONFIG="disk_config/user.toml"
+    MERGED_CONFIG=""
     if [[ -f "$USER_CONFIG" ]]; then
         echo "Merging ${USER_CONFIG} with ${config}..."
-        MERGED_CONFIG=$(mktemp -p "${PWD}" -t merged-config.XXXXXXXXXX.toml)
+        MERGED_CONFIG="merged-config.$$.toml"
         cat "${config}" "$USER_CONFIG" > "$MERGED_CONFIG"
         CONFIG_TO_USE="$MERGED_CONFIG"
     else
@@ -216,7 +217,7 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
       "${target_image}:${tag}"
 
     # Cleanup merged config if created
-    if [[ -f "${MERGED_CONFIG:-}" ]]; then
+    if [[ -n "$MERGED_CONFIG" && -f "$MERGED_CONFIG" ]]; then
         rm -f "$MERGED_CONFIG"
     fi
 

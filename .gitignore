@@ -5,3 +5,4 @@ _build-*/**
 
 # Local user config (contains credentials)
 disk_config/user.toml
+merged-config.*.toml
