@@ -187,7 +187,7 @@ cd "$BUILD_DIR"
 # -----------------------------------------------------------------------------
 git clone --depth 1 https://github.com/hyprwm/hyprland-protocols.git
 cd hyprland-protocols
-meson setup build --prefix=/usr
+meson setup . build --prefix=/usr
 ninja -C build
 ninja -C build install
 cd "$BUILD_DIR"
