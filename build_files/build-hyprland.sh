@@ -5,8 +5,7 @@ set -ouex pipefail
 # Hyprland 0.53+ Build Script for Fedora
 # =============================================================================
 # Optimized with parallel compilation and build caching.
-# Uses ashbuk COPR for xdg-desktop-portal-hyprland and builds everything else
-# from source to ensure compatibility.
+# Builds everything from source to ensure compatibility.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -104,15 +103,9 @@ build_meson_project() {
 }
 
 # -----------------------------------------------------------------------------
-# Install xdg-desktop-portal-hyprland from ashbuk COPR
-# -----------------------------------------------------------------------------
-dnf5 -y copr enable ashbuk/Hyprland-Fedora
-dnf5 install -y xdg-desktop-portal-hyprland
-dnf5 -y copr disable ashbuk/Hyprland-Fedora
-
-# -----------------------------------------------------------------------------
 # Install build dependencies
 # -----------------------------------------------------------------------------
+# Note: xdg-desktop-portal-hyprland is built from source below
 dnf5 install -y \
     cmake \
     ninja-build \
@@ -126,6 +119,7 @@ dnf5 install -y \
     mesa-libgbm-devel \
     mesa-libEGL-devel \
     libxkbcommon-devel \
+    libinput-devel \
     libjpeg-turbo-devel \
     libwebp-devel \
     file-devel \
@@ -146,6 +140,7 @@ dnf5 install -y \
     xcb-util-image-devel \
     xcb-util-renderutil-devel \
     xcb-util-wm-devel \
+    xcb-util-errors-devel \
     pugixml-devel \
     libseat-devel \
     libzip-devel \
@@ -153,7 +148,11 @@ dnf5 install -y \
     libXcursor-devel \
     re2-devel \
     muParser-devel \
-    iniparser-devel
+    iniparser-devel \
+    pipewire-devel \
+    qt6-qtbase-devel \
+    qt6-qtwayland-devel \
+    xdg-desktop-portal
 
 # -----------------------------------------------------------------------------
 # Setup build directory
@@ -275,6 +274,7 @@ ldconfig
 # - hyprlock
 # - hyprsunset
 # - hyprpicker
+# - xdg-desktop-portal-hyprland
 # =============================================================================
 echo "=== PHASE 6: Building Hyprland utilities ==="
 
@@ -283,12 +283,14 @@ git_clone_or_update "https://github.com/hyprwm/hypridle.git" "hypridle"
 git_clone_or_update "https://github.com/hyprwm/hyprlock.git" "hyprlock"
 git_clone_or_update "https://github.com/hyprwm/hyprsunset.git" "hyprsunset"
 git_clone_or_update "https://github.com/hyprwm/hyprpicker.git" "hyprpicker"
+git_clone_or_update "https://github.com/hyprwm/xdg-desktop-portal-hyprland.git" "xdg-desktop-portal-hyprland"
 
 run_parallel build_cmake_project "hyprpaper"
 run_parallel build_cmake_project "hypridle"
 run_parallel build_cmake_project "hyprlock"
 run_parallel build_cmake_project "hyprsunset"
 run_parallel build_cmake_project "hyprpicker"
+run_parallel build_cmake_project "xdg-desktop-portal-hyprland"
 wait_all
 
 echo "=== All Hyprland components built successfully ==="
