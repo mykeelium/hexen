@@ -371,8 +371,10 @@ mkdir -p /etc/skel/.config
 cp -r /ctx/config/hypr /etc/skel/.config/
 cp -r /ctx/config/waybar /etc/skel/.config/
 cp -r /ctx/config/mako /etc/skel/.config/
+cp -r /ctx/config/wofi /etc/skel/.config/
 
 # Set correct permissions
 chmod -R 755 /etc/skel/.config/hypr
 chmod -R 755 /etc/skel/.config/waybar
 chmod -R 755 /etc/skel/.config/mako
+chmod -R 755 /etc/skel/.config/wofi
