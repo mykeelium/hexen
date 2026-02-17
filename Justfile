@@ -87,7 +87,7 @@ sudoif command *args:
 
 # Build the image using the specified parameters
 # variant: hyprland or cosmic (selects Containerfile.hyprland or Containerfile.cosmic)
-build $variant="hyprland" $target_image=image_name $tag=default_tag:
+build $variant="hyprland" $target_image=image_name $tag=default_tag $mount="false":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -103,9 +103,14 @@ build $variant="hyprland" $target_image=image_name $tag=default_tag:
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
     fi
 
+    if [[ "{{ mount }}" == "true" ]]; then
+        BUILD_ARGS+=("--build-arg" "ENABLE_VIRTIOFS=true")
+    fi
+
     podman build \
         "${BUILD_ARGS[@]}" \
         --pull=newer \
+        --network=host \
         --file "${CONTAINERFILE}" \
         --tag "${target_image}:${tag}" \
         .
@@ -119,6 +124,87 @@ build-hyprland $target_image=image_name $tag=default_tag:
 [group('Build')]
 build-cosmic $target_image=image_name $tag=default_tag:
     just build cosmic "{{ target_image }}" "{{ tag }}"
+
+# Build hyprland variant local (shortcut)
+[group('Build')]
+build-hyprland-local:
+  sudo just build hyprland "localhost/hexen-hyprland" "latest" "true"
+  just _build-qcow2 "localhost/hexen-hyprland:latest" "hyprland"
+
+
+_build-qcow2 $image_name=image_name $variant="hyprland":
+  sudo podman run \
+    --rm \
+    --privileged \
+    -v /var/lib/containers/storage:/var/lib/containers/storage \
+    -v ./output/{{ variant }}:/output \
+    -v ./disk_config/default_config.toml:/config.toml:ro \
+    quay.io/centos-bootc/bootc-image-builder:latest \
+    --type qcow2 \
+    --rootfs ext4 \
+    --config /config.toml \
+    {{ image_name }}
+
+vm $variant="hyprland" $bind="no":
+  #!/usr/bin/env bash
+  just build-{{ variant }}-local
+  just vm-reset hexen-{{ variant }}
+  just vm-create {{ variant }}
+  if [[ "{{bind}}" == "yes" ]]; then \
+    just vm-bind {{variant}}
+  fi
+  just vm-view hexen-{{ variant }}
+
+vm-open $mode="normal" $variant="hyprland":
+  #!/usr/bin/env bash
+  if [[ "{{mode}}" == "clean" ]]; then \
+    echo "Resetting VM....";
+    just vm-reset hexen-{{variant}}
+    just vm-create {{variant}}
+    just vm-view hexen-{{ variant }}
+  else
+    if sudo virsh domstate hexen-{{variant}} 2>/dev/null | grep -q running; then \
+      echo "VM already running"; \
+    else \
+      echo "Starting VM..."; \
+      just vm-start hexen-{{variant}};
+    fi
+    just vm-view hexen-{{variant}};
+  fi
+
+vm-bind $variant="hyprland":
+  virt-customize \
+    -a {{variant}}-qcow2 \
+    --mkdir /mnt/shared \
+    --append-line "/etc/fstab:shared /mnt/shared virtiofs defaults 0 0"
+
+
+vm-reset $name:
+  sudo virsh destroy {{name}}
+  sudo virsh undefine {{name}} --nvram
+
+vm-create $variant="hyprland":
+  sudo virt-install \
+    --name hexen-{{ variant }} \
+    --memory 4096 \
+    --vcpus 4 \
+    --memorybacking access.mode=shared \
+    --disk path=./output/{{ variant }}/qcow2/disk.qcow2,format=qcow2 \
+    --import \
+    --os-variant fedora-unknown \
+    --network network=default \
+    --graphics spice \
+    --filesystem source=/home/mcuomo/dev/images/shared,target=shared,driver.type=virtiofs \
+    --cloud-init user-data=./disk_config/user-data.yaml \
+    --noautoconsole
+
+vm-start $vm-name:
+  sudo virsh start {{ vm-name }}
+
+vm-view $vm-name:
+  virt-viewer --connect qemu:///system {{ vm-name }}
+
+
 
 # Command: _rootful_load_image
 # Description: This script checks if the current user is root or running under sudo. If not, it attempts to resolve the image tag using podman inspect.

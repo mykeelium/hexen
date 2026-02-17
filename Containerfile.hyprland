@@ -36,7 +36,31 @@ RUN --mount=type=bind,from=ctx,source=/,target=/ctx \
     --mount=type=tmpfs,dst=/tmp \
     --mount=type=cache,dst=/var/hypr-build,id=hyprland-build \
     /ctx/build-common.sh && /ctx/build-hyprland.sh
-    
+
+
+ARG ENABLE_VIRTIOFS=false
+
+RUN if [ "$ENABLE_VIRTIOFS" = "true" ]; then \
+      install -d -m 0755 /var/mnt/shared && \
+      printf '%s\n' \
+        '[Unit]' \
+        'Description=VirtioFS Host Share' \
+        'After=network.target' \
+        '' \
+        '[Mount]' \
+        'What=shared' \
+        'Where=/var/mnt/shared' \
+        'Type=virtiofs' \
+        'Options=defaults' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /usr/lib/systemd/system/var-mnt-shared.mount && \
+      ln -s ../var-mnt-shared.mount \
+        /usr/lib/systemd/system/multi-user.target.wants/var-mnt-shared.mount ; \
+    fi
+
+
 ### LINTING
 ## Verify final image and contents are correct.
 RUN bootc container lint
