@@ -8,7 +8,7 @@ mkdir -p /tmp/
 # RPMfusion repos are available by default in ublue main images
 # List of rpmfusion packages can be found here:
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
-dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12
+dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12 jetbrains-mono-fonts
 
 # COPR
 dnf5 -y copr enable scottames/ghostty && dnf5 install -y ghostty && dnf5 -y copr disable scottames/ghostty
