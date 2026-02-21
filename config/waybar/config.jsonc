@@ -1,15 +1,15 @@
 {
     "layer": "top",
     "position": "top",
-    "height": 32,
+    "height": 36,
     "spacing": 4,
-    "margin-top": 6,
-    "margin-left": 10,
-    "margin-right": 10,
+    "margin-top": 8,
+    "margin-left": 12,
+    "margin-right": 12,
 
     "modules-left": ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock"],
-    "modules-right": ["tray", "pulseaudio", "network", "battery"],
+    "modules-right": ["pulseaudio", "network", "cpu", "memory", "battery", "tray"],
 
     "hyprland/workspaces": {
         "format": "{id}",
@@ -19,14 +19,14 @@
 
     "hyprland/window": {
         "format": "{}",
-        "max-length": 50,
+        "max-length": 60,
         "separate-outputs": true
     },
 
     "clock": {
-        "format": "{:%a %b %d  %H:%M}",
+        "format": "󰥔  {:%A %H:%M}",
         "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
-        "format-alt": "{:%Y-%m-%d}"
+        "format-alt": "󰥔  {:%A %H:%M}"
     },
 
     "battery": {
@@ -34,7 +34,7 @@
             "warning": 30,
             "critical": 15
         },
-        "format": "{icon}  {capacity}%",
+        "format": "{icon} {capacity}%",
         "format-charging": "󰂄 {capacity}%",
         "format-plugged": "󰂄 {capacity}%",
         "format-alt": "{icon} {time}",
@@ -42,10 +42,10 @@
     },
 
     "network": {
-        "format-wifi": "󰤨 {signalStrength}%",
-        "format-ethernet": "󰈀 {ipaddr}",
-        "format-linked": "󰈀 {ifname}",
-        "format-disconnected": "󰤭 Disconnected",
+        "format-wifi": "󰤨  {signalStrength}%",
+        "format-ethernet": "󰈀  {ipaddr}",
+        "format-linked": "󰈀  {ifname}",
+        "format-disconnected": "󰤮  Offline",
         "tooltip-format": "{ifname}: {ipaddr}/{cidr}\n{essid}",
         "on-click": "nm-connection-editor"
     },
@@ -54,7 +54,7 @@
         "format": "{icon} {volume}%",
         "format-bluetooth": "󰂯 {volume}%",
         "format-bluetooth-muted": "󰂲",
-        "format-muted": "󰝟",
+        "format-muted": "󰝟 mute",
         "format-icons": {
             "headphone": "󰋋",
             "hands-free": "󰋋",
@@ -65,6 +65,17 @@
             "default": ["󰕿", "󰖀", "󰕾"]
         },
         "on-click": "pavucontrol"
+    },
+
+    "cpu": {
+        "interval": 2,
+        "format": " {usage}%",
+        "tooltip": true
+    },
+
+    "memory": {
+        "interval": 5,
+        "format": " {}%"
     },
 
     "tray": {

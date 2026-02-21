@@ -180,10 +180,23 @@ vm-bind $variant="hyprland":
 
 
 vm-reset $name:
-  sudo virsh destroy {{name}}
-  sudo virsh undefine {{name}} --nvram
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if sudo virsh dominfo {{name}} >/dev/null 2>&1; then
+    sudo virsh destroy {{name}} >/dev/null 2>&1 || true
+    sudo virsh undefine {{name}} --nvram >/dev/null 2>&1 || sudo virsh undefine {{name}}
+  else
+    echo "VM {{name}} is not defined; nothing to reset."
+  fi
 
 vm-create $variant="hyprland":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  name="hexen-{{ variant }}"
+  if sudo virsh dominfo "${name}" >/dev/null 2>&1; then
+    echo "VM ${name} already exists. Run: just vm-reset ${name}"
+    exit 1
+  fi
   sudo virt-install \
     --name hexen-{{ variant }} \
     --memory 4096 \
@@ -195,7 +208,6 @@ vm-create $variant="hyprland":
     --network network=default \
     --graphics spice \
     --filesystem source=/home/mcuomo/dev/images/shared,target=shared,driver.type=virtiofs \
-    --cloud-init user-data=./disk_config/user-data.yaml \
     --noautoconsole
 
 vm-start $vm-name:

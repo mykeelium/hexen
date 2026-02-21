@@ -1,95 +1,85 @@
-/* Tokyo Night color scheme */
-@define-color bg #1a1b26;
-@define-color bg-alt #24283b;
-@define-color fg #c0caf5;
-@define-color blue #7aa2f7;
-@define-color cyan #7dcfff;
-@define-color green #9ece6a;
-@define-color magenta #bb9af7;
-@define-color red #f7768e;
-@define-color yellow #e0af68;
+/* Neon cyber green style */
+@define-color bg #06120e;
+@define-color bg-alt #0b1e18;
+@define-color fg #b8ffe4;
+@define-color border #1f5d4d;
+@define-color green #00ff9c;
+@define-color cyan #00e5ff;
+@define-color lime #8dff63;
+@define-color red #ff5c7a;
+@define-color yellow #ffd65c;
 
 * {
     font-family: "JetBrainsMono Nerd Font", "Font Awesome 6 Free", sans-serif;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
+    min-height: 0;
 }
 
 window#waybar {
-    background-color: @bg;
-    border-radius: 8px;
+    background: alpha(@bg, 0.78);
     color: @fg;
+    border: 1px solid alpha(@border, 0.95);
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px alpha(@green, 0.25);
 }
 
-window#waybar.hidden {
-    opacity: 0.2;
+#workspaces {
+    margin: 0 6px;
 }
 
 #workspaces button {
-    padding: 0 8px;
-    color: @fg;
-    background-color: transparent;
-    border-radius: 4px;
-    margin: 4px 2px;
+    padding: 0 10px;
+    margin: 6px 3px;
+    color: alpha(@fg, 0.9);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    transition: all 0.2s ease;
 }
 
 #workspaces button:hover {
-    background-color: @bg-alt;
+    background: alpha(@bg-alt, 0.98);
+    border-color: alpha(@green, 0.6);
+    color: @green;
 }
 
 #workspaces button.active {
-    background-color: @blue;
-    color: @bg;
+    background: linear-gradient(90deg, @green, @cyan);
+    color: #001109;
 }
 
 #workspaces button.urgent {
-    background-color: @red;
-    color: @bg;
+    background: @red;
+    color: #100004;
 }
 
+#window,
 #clock,
-#battery,
-#network,
 #pulseaudio,
-#tray,
-#window {
+#network,
+#cpu,
+#memory,
+#battery,
+#tray {
+    margin: 6px 3px;
     padding: 0 12px;
-    margin: 4px 2px;
-    border-radius: 4px;
-    background-color: @bg-alt;
+    border-radius: 9px;
+    background: alpha(@bg-alt, 0.95);
+    border: 1px solid alpha(@border, 0.9);
 }
 
 #window {
-    background-color: transparent;
+    color: alpha(@fg, 0.82);
 }
 
 #clock {
-    color: @blue;
-}
-
-#battery {
     color: @green;
+    font-weight: 800;
 }
 
-#battery.charging {
-    color: @green;
-}
-
-#battery.warning:not(.charging) {
-    color: @yellow;
-}
-
-#battery.critical:not(.charging) {
-    background-color: @red;
-    color: @bg;
-    animation: blink 0.5s linear infinite alternate;
-}
-
-@keyframes blink {
-    to {
-        background-color: @bg-alt;
-        color: @red;
-    }
+#pulseaudio {
+    color: @lime;
 }
 
 #network {
@@ -100,16 +90,27 @@ window#waybar.hidden {
     color: @red;
 }
 
-#pulseaudio {
-    color: @magenta;
+#cpu,
+#memory {
+    color: @yellow;
 }
 
-#pulseaudio.muted {
-    color: @red;
+#battery {
+    color: @green;
+}
+
+#battery.warning:not(.charging) {
+    color: @yellow;
+}
+
+#battery.critical:not(.charging) {
+    color: #100004;
+    background: @red;
+    border-color: alpha(@red, 0.95);
 }
 
 #tray {
-    background-color: transparent;
+    padding-right: 10px;
 }
 
 #tray > .passive {
