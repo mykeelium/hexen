@@ -11,6 +11,22 @@ mkdir -p /tmp/
 dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12 jetbrains-mono-fonts \
   gnome-keyring libsecret
 
+# Apple T2 support (set APPLE_T2=1; optional APPLE_T2_MODE=interactive|headless)
+if [[ "${APPLE_T2:-}" == "1" ]]; then
+  dnf5 install -y dnf5-plugins-core
+  dnf5 -y copr enable sharpenedblade/t2linux
+  dnf5 -y swap --from-repo="copr:copr.fedorainfracloud.org:sharpenedblade:t2linux" kernel kernel
+  case "${APPLE_T2_MODE:-headless}" in
+    headless)
+      dnf5 install -y t2linux-config t2linux-scripts t2fanrd
+      ;;
+    *)
+      dnf5 install -y t2linux-release
+      ;;
+  esac
+  dnf5 -y copr disable sharpenedblade/t2linux
+fi
+
 # Flatpak
 dnf5 install -y flatpak
 flatpak remote-add --if-not-exists --system flathub https://flathub.org/repo/flathub.flatpakrepo

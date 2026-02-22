@@ -42,9 +42,19 @@ jobs:
           - variant: cosmic
             containerfile: Containerfile.cosmic
             image_name: hexen-cosmic
+            variant_tag: cosmic
           - variant: hyprland
             containerfile: Containerfile.hyprland
             image_name: hexen-hyprland
+            variant_tag: hyprland
+          - variant: cosmic-apple
+            containerfile: Containerfile.cosmic-apple
+            image_name: hexen-cosmic-apple
+            variant_tag: cosmic-apple
+          - variant: hyprland-apple
+            containerfile: Containerfile.hyprland-apple
+            image_name: hexen-hyprland-apple
+            variant_tag: hyprland-apple
 
     steps:
       - name: Prepare environment
@@ -96,8 +106,7 @@ jobs:
             type=raw,value={{date 'YYYYMMDD'}}
             type=sha,enable=${{ github.event_name == 'pull_request' }}
             type=ref,event=pr
-            type=raw,value=cosmic
-            type=raw,value=hyprland
+            type=raw,value=${{ matrix.variant_tag }}
           labels: |
             io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/${{ github.sha }}/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
