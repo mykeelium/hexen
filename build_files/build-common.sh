@@ -114,7 +114,7 @@ XDG_CONFIG_HOME=/usr/share \
 XDG_DATA_HOME=/usr/share \
 XDG_CACHE_HOME=/var/lib/nvim \
 XDG_STATE_HOME=/var/lib/nvim \
-nvim --headless "+Lazy! restore" +qa
+nvim --headless "+Lazy! restore" "+MasonUpdate" "+MasonInstall lua-language-server omnisharp gopls basedpyright ruff" +qa
 
 chmod -R 755 /usr/share/nvim 
 chmod -R 755 /var/lib/nvim
