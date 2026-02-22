@@ -10,6 +10,11 @@ mkdir -p /tmp/
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
 dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12 jetbrains-mono-fonts
 
+# Flatpak
+dnf5 install -y flatpak
+flatpak remote-add --if-not-exists --system flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install -y --system flathub org.signal.Signal
+
 # COPR
 dnf5 -y copr enable scottames/ghostty && dnf5 install -y ghostty && dnf5 -y copr disable scottames/ghostty
 dnf5 -y copr enable dejan/lazygit && dnf5 install -y lazygit && dnf5 -y copr disable dejan/lazygit
