@@ -8,12 +8,15 @@ mkdir -p /tmp/
 # RPMfusion repos are available by default in ublue main images
 # List of rpmfusion packages can be found here:
 # https://mirrors.rpmfusion.org/mirrorlist?path=free/fedora/updates/43/x86_64/repoview/index.html&protocol=https&redirect=1
-dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12 jetbrains-mono-fonts
+dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang postgresql python3.12 jetbrains-mono-fonts \
+  gnome-keyring libsecret
 
 # Flatpak
 dnf5 install -y flatpak
 flatpak remote-add --if-not-exists --system flathub https://flathub.org/repo/flathub.flatpakrepo
 flatpak install -y --system flathub org.signal.Signal
+flatpak override --system --env=SIGNAL_PASSWORD_STORE=gnome-libsecret org.signal.Signal
+flatpak install -y --system flathub app.zen_browser.zen
 
 # COPR
 dnf5 -y copr enable scottames/ghostty && dnf5 install -y ghostty && dnf5 -y copr disable scottames/ghostty

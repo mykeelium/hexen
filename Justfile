@@ -131,6 +131,12 @@ build-hyprland-local:
   sudo just build hyprland "localhost/hexen-hyprland" "latest" "true"
   just _build-qcow2 "localhost/hexen-hyprland:latest" "hyprland"
 
+# Build cosmic variant local (shortcut)
+[group('Build')]
+build-cosmic-local:
+  sudo just build cosmic "localhost/hexen-cosmic" "latest" "true"
+  just _build-qcow2 "localhost/hexen-cosmic:latest" "cosmic"
+
 
 _build-qcow2 $image_name=image_name $variant="hyprland":
   sudo podman run \
