@@ -13,7 +13,7 @@ dnf5 install -y btop clang fzf git libfido2 neovim python3-neovim ripgrep golang
 
 # Apple T2 support (set APPLE_T2=1; optional APPLE_T2_MODE=interactive|headless)
 if [[ "${APPLE_T2:-}" == "1" ]]; then
-  dnf5 install -y dnf5-plugins-core
+  # dnf5 install -y dnf5-plugins-core
   dnf5 -y copr enable sharpenedblade/t2linux
   dnf5 -y swap --from-repo="copr:copr.fedorainfracloud.org:sharpenedblade:t2linux" kernel kernel
   case "${APPLE_T2_MODE:-headless}" in
@@ -38,10 +38,6 @@ flatpak install -y --system flathub app.zen_browser.zen
 dnf5 -y copr enable scottames/ghostty && dnf5 install -y ghostty && dnf5 -y copr disable scottames/ghostty
 dnf5 -y copr enable dejan/lazygit && dnf5 install -y lazygit && dnf5 -y copr disable dejan/lazygit
 dnf5 -y copr enable varlad/zellij && dnf5 install -y zellij && dnf5 -y copr disable varlad/zellij
-
-# dnf5 -y copr enable sneexy/zen-browser
-# dnf5 install -y zen-browser
-# dnf5 -y copr disable sneexy/zen-browser
 
 
 # gopls
