@@ -1,0 +1,148 @@
+---
+- name: Install base packages from official repositories
+  ansible.builtin.package:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Enable required base services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop: "{{ base_services }}"
+
+- name: Install zram generator configuration
+  ansible.builtin.template:
+    src: zram-generator.conf.j2
+    dest: /etc/systemd/zram-generator.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Reload systemd
+    - Start generated zram swap device
+
+- name: Confirm root is on Btrfs before creating snapshots
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - FSTYPE
+      - --target
+      - /
+  register: root_filesystem
+  changed_when: false
+
+- name: Require Btrfs root
+  ansible.builtin.assert:
+    that:
+      - root_filesystem.stdout == 'btrfs'
+    fail_msg: Snapper root setup requires / to be on Btrfs; no snapshot changes were made.
+
+- name: Read Btrfs subvolume path for root
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - FSROOT
+      - --target
+      - /
+  register: root_subvolume
+  changed_when: false
+
+- name: Read Btrfs subvolume path for home
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - FSROOT
+      - --target
+      - /home
+  register: home_subvolume
+  changed_when: false
+
+- name: Read filesystem type for home
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - FSTYPE
+      - --target
+      - /home
+  register: home_filesystem
+  changed_when: false
+
+- name: Require a separate Btrfs home subvolume
+  ansible.builtin.assert:
+    that:
+      - home_filesystem.stdout == 'btrfs'
+      - home_subvolume.stdout != root_subvolume.stdout
+    fail_msg: >-
+      /home is not a separate filesystem root. Configure a separate Btrfs @home
+      subvolume before provisioning so root snapshots leave personal files outside
+      the rollback scope.
+
+- name: Check whether /.snapshots is a separate mount
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --mountpoint
+      - /.snapshots
+  register: snapshots_mount
+  changed_when: false
+  failed_when: snapshots_mount.rc not in [0, 1]
+
+- name: Require Snapper-compatible snapshots mount layout
+  ansible.builtin.assert:
+    that:
+      - snapshots_mount.rc == 1
+    fail_msg: >-
+      /.snapshots is already a mount point. Review the Archinstall Btrfs layout and
+      Snapper's documented subvolume setup before provisioning; this role will not
+      unmount or delete a subvolume.
+
+- name: Check for Snapper root configuration
+  ansible.builtin.stat:
+    path: /etc/snapper/configs/root
+  register: snapper_root_config
+
+- name: Inspect existing /.snapshots path
+  ansible.builtin.stat:
+    path: /.snapshots
+  register: snapper_path
+
+- name: Remove empty Snapper mountpoint directory if present
+  ansible.builtin.command:
+    argv:
+      - rmdir
+      - /.snapshots
+  when:
+    - not snapper_root_config.stat.exists
+    - snapshots_mount.rc == 1
+    - snapper_path.stat.exists
+    - snapper_path.stat.isdir
+  changed_when: true
+
+- name: Create Snapper root configuration on first run
+  ansible.builtin.command:
+    argv:
+      - snapper
+      - -c
+      - root
+      - create-config
+      - /
+  when: not snapper_root_config.stat.exists
+  changed_when: true
+
+- name: Install Snapper root policy
+  ansible.builtin.template:
+    src: snapper-root.conf.j2
+    dest: /etc/snapper/configs/root
+    owner: root
+    group: root
+    mode: '0640'

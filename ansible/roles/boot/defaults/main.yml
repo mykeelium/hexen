@@ -1,0 +1,3 @@
+---
+boot_esp_mountpoint: /boot
+boot_root_subvolume: '@'

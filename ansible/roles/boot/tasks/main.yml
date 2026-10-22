@@ -1,0 +1,110 @@
+---
+- name: Install Limine from the official Arch repository
+  ansible.builtin.package:
+    name: '{{ boot_packages }}'
+    state: present
+
+- name: Require a per-machine LUKS UUID
+  ansible.builtin.assert:
+    that:
+      - boot_luks_uuid is defined
+      - boot_luks_uuid | default('') | length > 0
+      - boot_luks_uuid | default('') != 'REPLACE_WITH_LUKS_UUID'
+    fail_msg: Supply this machine's LUKS UUID with -e boot_luks_uuid=...; it is not stored in the repository.
+
+- name: Check EFI mountpoint
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --mountpoint
+      - '{{ boot_esp_mountpoint }}'
+  register: esp_mount
+  changed_when: false
+
+- name: Require the ESP to be mounted as FAT
+  ansible.builtin.assert:
+    that:
+      - esp_mount.rc == 0
+    fail_msg: The expected ESP mountpoint is not mounted; no boot files were written.
+
+- name: Read ESP filesystem type
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - FSTYPE
+      - --mountpoint
+      - '{{ boot_esp_mountpoint }}'
+  register: esp_fstype
+  changed_when: false
+
+- name: Require FAT ESP
+  ansible.builtin.assert:
+    that:
+      - esp_fstype.stdout in ['vfat', 'fat', 'msdos']
+    fail_msg: Expected a FAT EFI System Partition at {{ boot_esp_mountpoint }}; no boot files were written.
+
+- name: Read ESP device path
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - SOURCE
+      - --mountpoint
+      - '{{ boot_esp_mountpoint }}'
+  register: esp_source
+  changed_when: false
+
+- name: Read partition type for ESP
+  ansible.builtin.command:
+    argv:
+      - lsblk
+      - --noheadings
+      - --nodeps
+      - --output
+      - PARTTYPE
+      - '{{ esp_source.stdout }}'
+  register: esp_partition_type
+  changed_when: false
+
+- name: Require GPT EFI System Partition
+  ansible.builtin.assert:
+    that:
+      - esp_partition_type.stdout | lower == 'c12a7328-f81f-11d2-ba4b-00a0c93ec93b'
+    fail_msg: The mounted FAT partition is not identified as a GPT EFI System Partition; no boot files were written.
+
+- name: Create Limine EFI application directory
+  ansible.builtin.file:
+    path: '{{ boot_esp_mountpoint }}/EFI/limine'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy Limine UEFI executable to verified ESP
+  ansible.builtin.copy:
+    src: /usr/share/limine/BOOTX64.EFI
+    dest: '{{ boot_esp_mountpoint }}/EFI/limine/BOOTX64.EFI'
+    remote_src: true
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Write common kernel command line
+  ansible.builtin.template:
+    src: kernel-cmdline.j2
+    dest: /etc/kernel/cmdline
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Render Limine configuration on the verified ESP
+  ansible.builtin.template:
+    src: limine.conf.j2
+    dest: '{{ boot_esp_mountpoint }}/limine.conf'
+    owner: root
+    group: root
+    mode: '0644'

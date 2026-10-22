@@ -1,0 +1,14 @@
+---
+- name: Configure this Arch Linux workstation
+  hosts: localhost
+  become: true
+  pre_tasks:
+    - name: Require the machine-specific LUKS UUID before changing the system
+      ansible.builtin.assert:
+        that:
+          - boot_luks_uuid | default('') | length > 0
+          - boot_luks_uuid | default('') != 'REPLACE_WITH_LUKS_UUID'
+        fail_msg: Supply boot_luks_uuid at runtime; no provisioning tasks have run.
+  roles:
+    - base
+    - boot

@@ -1,0 +1,18 @@
+---
+base_packages:
+  - base-devel
+  - btrfs-progs
+  - git
+  - less
+  - man-db
+  - man-pages
+  - networkmanager
+  - snapper
+  - sudo
+  - zram-generator
+
+base_services:
+  - NetworkManager.service
+
+boot_packages:
+  - limine

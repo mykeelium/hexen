@@ -1,0 +1,4 @@
+# Memory-backed swap only. There is deliberately no disk swap or resume device.
+[zram0]
+zram-size = min(ram / 2, 4096)
+compression-algorithm = zstd
