@@ -1,0 +1,7 @@
+---
+# Non-repository applications stay manual; see docs/app-sources.md.
+apps_packages:
+  - neovim
+  - lazygit
+  - obsidian
+  - obs-studio

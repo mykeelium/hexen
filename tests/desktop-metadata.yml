@@ -1,0 +1,87 @@
+---
+# Root only in the disposable VM. Existing user's original mode is restored.
+- name: Preserve private parent directories and reject redirected destinations
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars:
+    desktop_user: '{{ test_desktop_user }}'
+  tasks:
+    - ansible.builtin.include_role:
+        name: desktop
+        tasks_from: preflight
+    - ansible.builtin.stat:
+        path: '{{ _desktop_home }}/.config'
+      register: original_config
+    - name: Check private configuration mode survives provisioning
+      block:
+        - ansible.builtin.file:
+            path: '{{ _desktop_home }}/.config'
+            mode: '0700'
+        - ansible.builtin.include_role:
+            name: desktop
+        - ansible.builtin.stat:
+            path: '{{ _desktop_home }}/.config'
+          register: private_config
+        - ansible.builtin.assert:
+            that: private_config.stat.mode == '0700'
+      always:
+        - ansible.builtin.file:
+            path: '{{ _desktop_home }}/.config'
+            mode: '{{ original_config.stat.mode }}'
+
+    - name: Require test account to be absent before creating it
+      ansible.builtin.command: getent passwd hexen-guard-test
+      register: guard_account
+      changed_when: false
+      failed_when: guard_account.rc != 2
+
+    - ansible.builtin.tempfile:
+        state: directory
+        prefix: hexen-desktop-metadata-
+      register: guard_fixture
+    - name: Exercise a redirected parent in an isolated test account
+      block:
+        - ansible.builtin.user:
+            name: hexen-guard-test
+            system: true
+            shell: /usr/bin/nologin
+            home: '{{ guard_fixture.path }}/home'
+            create_home: true
+        - ansible.builtin.file:
+            path: '{{ guard_fixture.path }}/outside'
+            state: directory
+            mode: '0700'
+        - ansible.builtin.file:
+            src: '{{ guard_fixture.path }}/outside'
+            dest: '{{ guard_fixture.path }}/home/.config'
+            state: link
+        - name: Require the symlinked parent to be refused
+          block:
+            - ansible.builtin.include_role:
+                name: desktop
+                tasks_from: preflight
+              vars:
+                desktop_user: hexen-guard-test
+            - ansible.builtin.fail:
+                msg: A redirected parent directory was accepted.
+          rescue:
+            - ansible.builtin.assert:
+                that:
+                  - ansible_failed_task.name == 'Require real user-owned configuration parents'
+        - ansible.builtin.stat:
+            path: '{{ guard_fixture.path }}/outside'
+          register: outside_directory
+        - ansible.builtin.assert:
+            that:
+              - outside_directory.stat.mode == '0700'
+              - outside_directory.stat.uid == 0
+      always:
+        - ansible.builtin.user:
+            name: hexen-guard-test
+            state: absent
+            remove: true
+        - ansible.builtin.file:
+            path: '{{ guard_fixture.path }}'
+            state: absent

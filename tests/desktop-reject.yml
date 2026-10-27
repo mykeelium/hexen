@@ -1,0 +1,14 @@
+---
+- name: Require rejection of unmanaged configuration
+  block:
+    - ansible.builtin.include_role:
+        name: desktop
+        tasks_from: preflight
+      vars:
+        desktop_config_dirs: ['{{ tested_config }}']
+    - ansible.builtin.fail:
+        msg: Unmanaged configuration was unexpectedly accepted.
+  rescue:
+    - ansible.builtin.assert:
+        that:
+          - ansible_failed_task.name == 'Preserve existing unmanaged desktop configuration'

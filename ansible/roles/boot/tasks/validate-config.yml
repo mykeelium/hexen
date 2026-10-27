@@ -1,0 +1,98 @@
+---
+# Deliberately accept only the single-entry Archinstall format verified in the VM.
+# Do not execute shell configuration to determine its meaning.
+- name: Verify one complete Limine entry
+  ansible.builtin.assert:
+    that:
+      - _entries | length == 1
+      - not (_entries | first).startswith('//')
+      - "_preamble | reject('match', '^timeout: [0-9]+$') | list | length == 0"
+      - _preamble | length <= 1
+      - _body | length == 4
+      - "'protocol: linux' in _body"
+      - "'path: boot():/vmlinuz-linux' in _body"
+      - "'module_path: boot():/initramfs-linux.img' in _body"
+      - _body | select('match', '^cmdline:') | list | length == 1
+    fail_msg: 'Boot preflight: expected one complete supported Limine Linux entry.'
+  vars:
+    _lines: '{{ (_boot_texts.results[0].content | b64decode).splitlines() | map("trim") | reject("equalto", "") | reject("match", "^#") | list }}'
+    _entries: '{{ _lines | select("match", "^/") | list }}'
+    _entry_index: '{{ _lines.index(_entries | first) if _entries | length == 1 else 0 }}'
+    _preamble: '{{ _lines[:_entry_index] }}'
+    _body: '{{ _lines[_entry_index + 1:] }}'
+
+- name: Verify an unambiguous supported initramfs hook assignment
+  ansible.builtin.assert:
+    that:
+      - _assignments | length == 1
+      - (_assignments | first) is match('^HOOKS=[(][a-zA-Z0-9_ -]+[)]$')
+      - _hooks | select('in', _required) | list == _required
+      - "'sd-encrypt' not in _hooks"
+      - "'systemd' not in _hooks"
+    fail_msg: 'Boot preflight: expected one supported HOOKS array with device discovery before encryption and filesystems.'
+  vars:
+    _assignments: '{{ (_boot_texts.results[1].content | b64decode).splitlines() | map("trim") | reject("match", "^#") | select("search", "(^|[^a-zA-Z0-9_])HOOKS([^a-zA-Z0-9_]|$)") | list }}'
+    _hooks: '{{ (_assignments | first | default("")) | replace("HOOKS=(", "") | replace(")", "") | split }}'
+    _required: [base, udev, keyboard, keymap, block, encrypt, filesystems]
+
+- name: Require the audited initramfs configuration to be used by the kernel preset
+  ansible.builtin.assert:
+    that:
+      - not (_boot_dropin_dir.stat.islnk | default(false))
+      - _boot_dropins.matched | default(0) == 0
+      - _preset_lines | reject('in', _allowed) | list | length == 0
+      - _preset_lines | unique | length == _preset_lines | length
+      - _required | difference(_preset_lines) | length == 0
+    fail_msg: 'Boot preflight: mkinitcpio drop-ins or an unsupported kernel preset can override the audited configuration.'
+  vars:
+    _preset_lines: '{{ (_boot_texts.results[3].content | b64decode).splitlines() | map("trim") | reject("equalto", "") | reject("match", "^#") | list }}'
+    _required:
+      - 'ALL_kver="{{ boot_esp_mountpoint }}/vmlinuz-linux"'
+      - "PRESETS=('default')"
+      - 'default_image="{{ boot_esp_mountpoint }}/initramfs-linux.img"'
+    _allowed: >-
+      {{ _required + ['ALL_config="/etc/mkinitcpio.conf"', 'default_config="/etc/mkinitcpio.conf"'] }}
+
+- name: Verify the active Limine package update action
+  ansible.builtin.assert:
+    that:
+      - _active_lines == _expected_lines
+    fail_msg: 'Boot preflight: expected the supported Limine package trigger and EFI copy action.'
+  vars:
+    _active_lines: '{{ (_boot_texts.results[2].content | b64decode).splitlines() | map("trim") | reject("equalto", "") | reject("match", "^#") | reject("match", "^Description = ") | list }}'
+    _expected_lines:
+      - '[Trigger]'
+      - 'Operation = Install'
+      - 'Operation = Upgrade'
+      - 'Type = Package'
+      - 'Target = limine'
+      - '[Action]'
+      - 'When = PostTransaction'
+      - 'Exec = /bin/sh -c "/usr/bin/cp /usr/share/limine/BOOTIA32.EFI {{ boot_esp_mountpoint }}/EFI/arch-limine/ && /usr/bin/cp /usr/share/limine/BOOTX64.EFI {{ boot_esp_mountpoint }}/EFI/arch-limine/"'
+
+- name: Verify saved and running parameters unlock the actual root
+  ansible.builtin.assert:
+    that:
+      - _tokens | select('match', '^root=') | list | length == 1
+      - _tokens | select('match', '^rootflags=') | list | length == 1
+      - _tokens | select('match', '^rootfstype=') | list | length == 1
+      - _tokens | select('match', '^cryptdevice=') | list | length == 1
+      - "('root=/dev/mapper/' ~ boot_root_mapper) in _tokens"
+      - "('rootflags=subvol=' ~ boot_root_subvolume) in _tokens"
+      - "'rootfstype=btrfs' in _tokens"
+      - _crypt_uuid in _tokens or _crypt_partuuid in _tokens
+    fail_msg: 'Boot preflight: saved or running parameters do not identify the actual encrypted root.'
+  loop:
+    - '{{ _saved_cmdline }}'
+    - '{{ _boot_running_cmdline.stdout }}'
+  loop_control:
+    label: '{{ "saved Limine entry" if ansible_loop.index0 == 0 else "running kernel" }}'
+    extended: true
+  vars:
+    _config_lines: '{{ (_boot_texts.results[0].content | b64decode).splitlines() | map("trim") | list }}'
+    _saved_cmdline: '{{ (_config_lines | select("match", "^cmdline:") | first) | replace("cmdline:", "", 1) | trim }}'
+    _partition: '{{ ((_boot_ancestry.stdout | from_json).blockdevices | first).children | first }}'
+    _tokens: '{{ item.split() }}'
+    _crypt_uuid: 'cryptdevice=UUID={{ _partition.uuid }}:{{ boot_root_mapper }}'
+    _crypt_partuuid: 'cryptdevice=PARTUUID={{ _partition.partuuid }}:{{ boot_root_mapper }}'
+

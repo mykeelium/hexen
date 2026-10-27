@@ -1,0 +1,104 @@
+---
+# Pure configuration fixtures: no disks, boot files, or privileges needed.
+- name: Reject unsafe boot configurations
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cmdline: 'cryptdevice=PARTUUID=test-partition:root root=/dev/mapper/root rootflags=subvol=@ rootfstype=btrfs rw'
+    limine: |
+      timeout: 5
+      /Arch Linux (linux)
+          protocol: linux
+          path: boot():/vmlinuz-linux
+          cmdline: {{ cmdline }}
+          module_path: boot():/initramfs-linux.img
+    mkinitcpio: 'HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block encrypt filesystems fsck)'
+    preset: |
+      ALL_config="/etc/mkinitcpio.conf"
+      ALL_kver="/boot/vmlinuz-linux"
+      PRESETS=('default')
+      default_image="/boot/initramfs-linux.img"
+    update_hook: |
+      [Trigger]
+      Operation = Install
+      Operation = Upgrade
+      Type = Package
+      Target = limine
+      [Action]
+      Description = Deploying Limine after upgrade...
+      When = PostTransaction
+      Exec = /bin/sh -c "/usr/bin/cp /usr/share/limine/BOOTIA32.EFI /boot/EFI/arch-limine/ && /usr/bin/cp /usr/share/limine/BOOTX64.EFI /boot/EFI/arch-limine/"
+    cases:
+      - {name: working installer configuration, accept: true}
+      - name: conflicting root
+        limine: '{{ limine | replace(cmdline, cmdline ~ " root=/dev/mapper/missing") }}'
+      - name: conflicting root flags
+        limine: '{{ limine | replace(cmdline, cmdline ~ " rootflags=subvol=missing") }}'
+      - name: conflicting root filesystem
+        limine: '{{ limine | replace(cmdline, cmdline ~ " rootfstype=ext4") }}'
+      - name: conflicting encrypted mapping
+        limine: '{{ limine | replace(cmdline, cmdline ~ " cryptdevice=UUID=wrong:root") }}'
+      - name: conflicting running root
+        running: '{{ cmdline }} root=/dev/mapper/missing'
+      - name: initramfs belongs to another entry
+        limine: |
+          timeout: 5
+          /Arch Linux (linux)
+              protocol: linux
+              path: boot():/vmlinuz-linux
+              cmdline: {{ cmdline }}
+          /Other
+              module_path: boot():/initramfs-linux.img
+      - name: duplicate kernel path
+        limine: |
+          {{ limine }}    path: boot():/missing
+      - name: later empty hook assignment
+        mkinitcpio: |
+          {{ mkinitcpio }}
+          HOOKS=()
+      - name: hook append assignment
+        mkinitcpio: |
+          {{ mkinitcpio }}
+          HOOKS+=(sd-encrypt)
+      - name: later shell declaration overrides hooks
+        mkinitcpio: |
+          {{ mkinitcpio }}
+          declare -a HOOKS=()
+      - name: configuration drop-in overrides hooks
+        dropins: 1
+      - name: symlinked drop-in directory hides overrides
+        dropin_symlink: true
+      - name: alternate kernel preset configuration
+        preset: '{{ preset | replace("/etc/mkinitcpio.conf", "/etc/other.conf") }}'
+      - name: encryption before block discovery
+        mkinitcpio: 'HOOKS=(base udev keyboard keymap encrypt block filesystems)'
+      - name: missing device discovery
+        mkinitcpio: 'HOOKS=(base keyboard keymap block encrypt filesystems)'
+      - name: no-op hook with commented copy
+        hook: |
+          [Trigger]
+          Operation = Install
+          Operation = Upgrade
+          Type = Package
+          Target = limine
+          [Action]
+          When = PostTransaction
+          Exec = /usr/bin/true
+          # /usr/share/limine/BOOTX64.EFI /boot/EFI/arch-limine/
+      - name: copy in the wrong hook section
+        hook: '{{ update_hook | replace("[Action]", "[Unrelated]") }}'
+      - name: wrong hook package
+        hook: '{{ update_hook | replace("Target = limine", "Target = other") }}'
+  tasks:
+    - name: Exercise each boot configuration
+      ansible.builtin.include_tasks: boot-config-case.yml
+      loop: '{{ cases }}'
+      loop_control:
+        loop_var: fixture
+        label: '{{ fixture.name }}'
+
+    - name: Require every configuration decision to match expectations
+      ansible.builtin.assert:
+        that: rejected_expectations | default([]) | length == 0
+        fail_msg: 'Unexpected audit decisions: {{ rejected_expectations | default([]) }}'

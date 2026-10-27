@@ -1,0 +1,77 @@
+---
+# Root inside the installed disposable VM; desktop_user must be explicit.
+- name: Verify desktop deployment preserves unrelated configuration
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+  vars:
+    desktop_user: '{{ test_desktop_user }}'
+  tasks:
+    - name: Accept the already managed desktop configuration
+      ansible.builtin.include_role:
+        name: desktop
+        tasks_from: preflight
+
+    - name: Refuse root as the desktop target
+      block:
+        - ansible.builtin.include_role:
+            name: desktop
+            tasks_from: preflight
+          vars:
+            desktop_user: root
+        - ansible.builtin.fail:
+            msg: Root was unexpectedly accepted.
+      rescue:
+        - ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require an explicit non-root desktop account'
+
+    - name: Create a test-owned configuration directory
+      ansible.builtin.tempfile:
+        state: directory
+        path: '{{ _desktop_home }}/.config'
+        prefix: hexen-preflight-
+      register: desktop_fixture
+
+    - name: Verify refusal without modifying unmanaged contents
+      block:
+        - name: Create a sentinel in the test-owned directory
+          ansible.builtin.copy:
+            dest: '{{ desktop_fixture.path }}/sentinel'
+            content: 'unmanaged user configuration'
+            mode: '0600'
+
+        - name: Reject an unmanaged directory
+          ansible.builtin.include_tasks: desktop-reject.yml
+          vars:
+            tested_config: '{{ desktop_fixture.path | basename }}'
+
+        - name: Create a test-owned symlink to unmanaged data
+          ansible.builtin.file:
+            src: '{{ desktop_fixture.path }}'
+            dest: '{{ desktop_fixture.path }}-link'
+            state: link
+
+        - name: Reject an unmanaged symlink
+          ansible.builtin.include_tasks: desktop-reject.yml
+          vars:
+            tested_config: '{{ desktop_fixture.path | basename }}-link'
+
+        - name: Verify the unmanaged sentinel survived
+          ansible.builtin.slurp:
+            src: '{{ desktop_fixture.path }}/sentinel'
+          register: desktop_sentinel
+
+        - ansible.builtin.assert:
+            that:
+              - desktop_sentinel.content | b64decode == 'unmanaged user configuration'
+      always:
+        - name: Remove only the test-owned symlink
+          ansible.builtin.file:
+            path: '{{ desktop_fixture.path }}-link'
+            state: absent
+        - name: Remove only the test-owned directory
+          ansible.builtin.file:
+            path: '{{ desktop_fixture.path }}'
+            state: absent

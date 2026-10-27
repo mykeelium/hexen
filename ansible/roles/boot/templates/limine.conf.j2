@@ -1,9 +1,0 @@
-# Generated from repository configuration; root UUID is supplied per machine.
-timeout: 5
-default_entry: 1
-
-/+Arch Linux
-    protocol: linux
-    path: boot():/vmlinuz-linux
-    module_path: boot():/initramfs-linux.img
-    cmdline: cryptdevice=UUID={{ boot_luks_uuid }}:cryptroot root=/dev/mapper/cryptroot rootfstype=btrfs rootflags=subvol={{ boot_root_subvolume }} rw

@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-26",
+  "target": "disposable x86_64 VM",
+  "notes": [
+    "These hashes identify one inspected local build, not reproducible-build claims.",
+    "Locally built packages are not signed official Arch packages.",
+    "1Password policy includes the build host account list; inspect or rebuild per target.",
+    "1Password build emitted a fakeroot warning; archive paths, every uid/gid, expected privileged modes, and installed metadata were checked."
+  ],
+  "packages": [
+    {
+      "package": "1password",
+      "sha256": "dd865542a4dcaf59f1e56e91846c0beb138fecc7982c0e47964cf5698b4fcf7d",
+      "entries": 125,
+      "privileged_files": [
+        [
+          "opt/1Password/chrome-sandbox",
+          "0o4755"
+        ]
+      ],
+      "integration_files": [
+        "usr/share/polkit-1/actions",
+        "usr/share/polkit-1/actions/com.1password.1Password.policy"
+      ],
+      "all_owners_root": true,
+      "artifact": "1password-8.12.42-36-x86_64.pkg.tar.zst",
+      "recipe_commit": "c384584bedaa1ffebd3939d03a52bf4ff48e2bff",
+      "source_verification": "SHA-256 and vendor detached OpenPGP signature"
+    },
+    {
+      "package": "zen-browser-bin",
+      "sha256": "015d1ba438eb3f8727fcdbab18b1a377515c1ff7e382f197d6178f2789882471",
+      "entries": 90,
+      "privileged_files": [],
+      "integration_files": [],
+      "all_owners_root": true,
+      "artifact": "zen-browser-bin-1.23.4b-1-x86_64.pkg.tar.zst",
+      "recipe_commit": "ff5b152a31356577936690ccd32599e851326b85",
+      "source_verification": "SHA-256"
+    },
+    {
+      "package": "zoom",
+      "sha256": "cf25a3a2486af93111243e975d66de08e2627f15b31af08c151b3d5d707a33b8",
+      "entries": 924,
+      "privileged_files": [],
+      "integration_files": [],
+      "all_owners_root": true,
+      "artifact": "zoom-7.2.1-1-x86_64.pkg.tar.zst",
+      "recipe_commit": "9cf1e9686715d0677db2eb4106c2d59aee6d7ca0",
+      "source_verification": "SHA-512"
+    },
+    {
+      "package": "slack-desktop",
+      "sha256": "85a9609d29519d3e17cd6b936f63e87b953ed6d29f3f6c1b396d837a0610d21e",
+      "entries": 174,
+      "privileged_files": [
+        [
+          "usr/lib/slack/chrome-sandbox",
+          "0o4755"
+        ]
+      ],
+      "integration_files": [],
+      "all_owners_root": true,
+      "artifact": "slack-desktop-4.52.182-1-x86_64.pkg.tar.zst",
+      "recipe_commit": "67c43c14906ddc96749f3c9b682bd9f5894d7251",
+      "source_verification": "BLAKE2"
+    }
+  ]
+}

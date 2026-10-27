@@ -1,0 +1,131 @@
+---
+# Supply desktop_user explicitly; never guess that root is the desktop account.
+desktop_repo_root: '{{ playbook_dir | dirname }}'
+desktop_launcher: walker
+desktop_config_dirs: [hypr, waybar, ghostty, mako, xdg-desktop-portal, nvim, lazydocker]
+desktop_launcher_config_dirs:
+  fuzzel: fuzzel
+  walker: walker
+desktop_launcher_packages:
+  fuzzel: [fuzzel]
+  walker: []
+desktop_walker_service_name: hexen-elephant.service
+desktop_walker_service_source: '{{ desktop_repo_root }}/config/systemd/user/hexen-elephant.service'
+desktop_walker_packages:
+  - walker
+  - elephant
+  - elephant-desktopapplications
+  - elephant-files
+  - elephant-runner
+  - elephant-calc
+  - elephant-providerlist
+desktop_walker_executables:
+  - /usr/bin/walker
+  - /usr/bin/elephant
+desktop_walker_provider_files:
+  - /usr/lib/elephant/desktopapplications.so
+  - /usr/lib/elephant/files.so
+  - /usr/lib/elephant/runner.so
+  - /usr/lib/elephant/calc.so
+  - /usr/lib/elephant/providerlist.so
+desktop_packages:
+  - hyprland
+  - uwsm
+  - ghostty
+  - waybar
+  - mako
+  - nautilus
+  - bluez
+  - bluez-utils
+  - bluetui
+  - pavucontrol
+  - hyprlock
+  - hypridle
+  - pipewire
+  - pipewire-audio
+  - pipewire-pulse
+  - pipewire-alsa
+  - pipewire-jack
+  - wireplumber
+  - xdg-desktop-portal-hyprland
+  - xdg-desktop-portal-gtk
+  - polkit-gnome
+  - gnome-keyring
+  - wl-clipboard
+  - cliphist
+  - grim
+  - slurp
+  - brightnessctl
+  - playerctl
+  - libnotify
+  - jq
+  - go-yq
+  - bat
+  - btop
+  - eza
+  - freerdp
+  - fzf
+  - git-delta
+  - github-cli
+  - just
+  - lazydocker
+  - navi
+  - podman
+  - podman-compose
+  - pgcli
+  - rsync
+  - tldr
+  - dust
+  - tokei
+  - yazi
+  - zellij
+  - zoxide
+  - z
+  - ttf-jetbrains-mono-nerd
+  # Editor search/provider and build tools; no automatic system-wide pip/npm.
+  - python-pynvim
+  - ripgrep
+  - sd
+  # Runtime for the checksum-pinned LocalSend AppImage installer.
+  - fuse2
+  - fd
+  - unzip
+  - zip
+  - tree-sitter-cli
+  - nodejs
+  - npm
+  - python-uv
+  - go
+  - delve
+  - dotnet-sdk
+  # Native Linux implementation for many .NET Framework apps and Rider's XBuild.
+  - mono
+  # OpenVPN connections are imported and controlled through NetworkManager.
+  - networkmanager-openvpn
+  - nm-connection-editor
+  # Local QEMU/KVM host managed through the system libvirt connection.
+  - qemu-desktop
+  - libvirt
+  - virt-manager
+  - virt-install
+  - virt-viewer
+  - edk2-ovmf
+  - dnsmasq
+  - swtpm
+
+desktop_virtualization_sockets:
+  - virtqemud.socket
+  - virtnetworkd.socket
+  - virtstoraged.socket
+
+desktop_system_services:
+  - bluetooth.service
+
+desktop_localsend_version: 1.18.2
+desktop_localsend_url: https://github.com/localsend/localsend/releases/download/v1.18.2/LocalSend-1.18.2-linux-x86-64.AppImage
+desktop_localsend_sha256: 19f21613d1834f6caa69517113670461a3f10b80a2a315f86548c0663d9c0aaf
+
+desktop_libvirt_default_pool_path: /var/lib/libvirt/images
+# Disable only when running this role inside a guest whose uplink overlaps
+# libvirt's default 192.168.122.0/24 NAT subnet.
+desktop_libvirt_manage_default_network: true

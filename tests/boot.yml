@@ -1,0 +1,83 @@
+---
+# Run as root only inside the installed disposable Arch VM.
+# ANSIBLE_ROLES_PATH=ansible/roles ansible-playbook -i localhost, tests/boot.yml
+- name: Verify the Archinstall boot preflight in the installed VM
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  vars:
+    boot_artifacts:
+      - /boot/vmlinuz-linux
+      - /boot/initramfs-linux.img
+      - /boot/EFI/arch-limine/limine.conf
+      - /boot/EFI/arch-limine/BOOTX64.EFI
+      - /etc/pacman.d/hooks/99-limine.hook
+      - /etc/mkinitcpio.conf
+      - /etc/mkinitcpio.d/linux.preset
+  tasks:
+    - name: Record the working boot artifacts
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        checksum_algorithm: sha256
+      loop: '{{ boot_artifacts }}'
+      register: boot_before
+
+    - name: Require the real Archinstall boot fixture
+      ansible.builtin.assert:
+        that:
+          - item.stat.isreg | default(false)
+      loop: '{{ boot_before.results }}'
+      loop_control:
+        label: '{{ item.item }}'
+
+    - name: Accept a working encrypted Archinstall boot without UUID input
+      ansible.builtin.include_role:
+        name: boot
+
+    - name: Reject a directory that is not the ESP
+      block:
+        - name: Audit with an invalid ESP mountpoint
+          ansible.builtin.include_role:
+            name: boot
+          vars:
+            boot_esp_mountpoint: /tmp
+        - name: Fail if the invalid ESP was accepted
+          ansible.builtin.fail:
+            msg: An ordinary directory was accepted as the ESP.
+      rescue:
+        - name: Require rejection by the ESP guard
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require a mounted FAT EFI System Partition'
+
+    - name: Reject a mapper that is not the running root
+      block:
+        - name: Audit with an invalid root mapper
+          ansible.builtin.include_role:
+            name: boot
+          vars:
+            boot_root_mapper: hexen-not-the-root
+        - name: Fail if the invalid mapper was accepted
+          ansible.builtin.fail:
+            msg: An unrelated mapper was accepted as the running root.
+      rescue:
+        - name: Require rejection by the running-root guard
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_task.name == 'Require the expected running root'
+
+    - name: Read the boot artifacts after all audits
+      ansible.builtin.stat:
+        path: '{{ item }}'
+        checksum_algorithm: sha256
+      loop: '{{ boot_artifacts }}'
+      register: boot_after
+
+    - name: Require the audits to preserve every boot artifact
+      ansible.builtin.assert:
+        that:
+          - item.0.stat.checksum == item.1.stat.checksum
+      loop: '{{ boot_before.results | zip(boot_after.results) | list }}'
+      loop_control:
+        label: '{{ item.0.item }}'

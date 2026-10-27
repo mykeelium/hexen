@@ -1,0 +1,280 @@
+---
+- name: Validate the desktop launcher selection
+  ansible.builtin.assert:
+    that:
+      - desktop_launcher | default('walker') in ['fuzzel', 'walker']
+    fail_msg: "Desktop preflight: desktop_launcher must be 'fuzzel' or 'walker'."
+
+- name: Resolve launcher-specific configuration directories
+  ansible.builtin.set_fact:
+    _desktop_config_dirs: '{{ desktop_config_dirs + [desktop_launcher_config_dirs[desktop_launcher | default("walker")]] }}'
+
+- name: Require an explicit non-root desktop account
+  ansible.builtin.assert:
+    that:
+      - desktop_user is defined
+      - desktop_user | default('') | length > 0
+      - desktop_user | default('root') != 'root'
+    fail_msg: 'Desktop preflight: supply desktop_user for an existing non-root account.'
+
+- name: Read the desktop account
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ desktop_user }}'
+
+- name: Resolve desktop home and ownership
+  ansible.builtin.set_fact:
+    _desktop_home: '{{ ansible_facts.getent_passwd[desktop_user][4] }}'
+    _desktop_uid: '{{ ansible_facts.getent_passwd[desktop_user][1] }}'
+    _desktop_gid: '{{ ansible_facts.getent_passwd[desktop_user][2] }}'
+
+- name: Inspect the desktop Bash startup file
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.bashrc'
+    follow: false
+  register: _desktop_bashrc
+
+- name: Preserve an unmanaged Bash startup file
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_bashrc.stat.exists and not (_desktop_bashrc.stat.islnk | default(false))) or
+        ((_desktop_bashrc.stat.isreg | default(false)) and
+         not (_desktop_bashrc.stat.islnk | default(false)) and
+         _desktop_bashrc.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Desktop preflight: refusing to modify {{ _desktop_home }}/.bashrc unless it
+      is absent or a regular file owned by the desktop user.
+
+- name: Inspect the desktop Git configuration file
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.gitconfig'
+    follow: false
+  register: _desktop_gitconfig
+
+- name: Preserve an unmanaged Git configuration file
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_gitconfig.stat.exists and not (_desktop_gitconfig.stat.islnk | default(false))) or
+        ((_desktop_gitconfig.stat.isreg | default(false)) and
+         not (_desktop_gitconfig.stat.islnk | default(false)) and
+         _desktop_gitconfig.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Desktop preflight: refusing to modify {{ _desktop_home }}/.gitconfig unless
+      it is absent or a regular file owned by the desktop user.
+
+- name: Require a regular desktop account home
+  ansible.builtin.assert:
+    that:
+      - _desktop_uid | int > 0
+      - _desktop_home.startswith('/')
+      - _desktop_home not in ['/', '/root']
+    fail_msg: 'Desktop preflight: expected a non-root account with its own home.'
+
+- name: Inspect desktop configuration parents
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/{{ item }}'
+    follow: false
+  loop:
+    - .config
+    - .config/hexen
+    - .config/systemd
+    - .config/systemd/user
+    - .config/systemd/user/sockets.target.wants
+    - .local
+    - .local/bin
+  register: _desktop_parents
+
+- name: Require real user-owned configuration parents
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.isdir | default(false)) and
+         not (item.stat.islnk | default(false)) and
+         item.stat.uid == _desktop_uid | int)
+    fail_msg: 'Desktop preflight: parent {{ _desktop_home }}/{{ item.item }} must be absent or a real directory owned by the desktop user.'
+  loop: '{{ _desktop_parents.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Inspect the Podman user socket enablement link
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/systemd/user/sockets.target.wants/podman.socket'
+    follow: false
+  register: _desktop_podman_socket_link
+
+- name: Preserve an unmanaged Podman user socket enablement link
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_podman_socket_link.stat.exists and not (_desktop_podman_socket_link.stat.islnk | default(false))) or
+        ((_desktop_podman_socket_link.stat.islnk | default(false)) and
+         _desktop_podman_socket_link.stat.lnk_source == '/usr/lib/systemd/user/podman.socket')
+    fail_msg: >-
+      Desktop preflight: refusing to replace an unmanaged Podman socket link at
+      {{ _desktop_home }}/.config/systemd/user/sockets.target.wants/podman.socket.
+
+- name: Inspect desktop configuration destinations
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/{{ item }}'
+    follow: false
+  loop: '{{ _desktop_config_dirs }}'
+  register: _desktop_destinations
+
+- name: Preserve existing unmanaged desktop configuration
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.islnk | default(false)) and
+         item.stat.lnk_source == desktop_repo_root ~ '/config/' ~ item.item)
+    fail_msg: 'Desktop preflight: refusing to replace unmanaged configuration at {{ _desktop_home }}/.config/{{ item.item }}.'
+  loop: '{{ _desktop_destinations.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Inspect the selected Hexen launcher setting
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/hexen/launcher'
+    follow: false
+  register: _desktop_launcher_setting
+
+- name: Preserve unmanaged Hexen launcher settings
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_launcher_setting.stat.exists and not (_desktop_launcher_setting.stat.islnk | default(false))) or
+        ((_desktop_launcher_setting.stat.isreg | default(false)) and
+         not (_desktop_launcher_setting.stat.islnk | default(false)) and
+         _desktop_launcher_setting.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Desktop preflight: refusing to replace unmanaged launcher setting at
+      {{ _desktop_home }}/.config/hexen/launcher.
+
+- name: Read an existing Hexen launcher setting
+  ansible.builtin.slurp:
+    src: '{{ _desktop_home }}/.config/hexen/launcher'
+  register: _desktop_launcher_setting_content
+  when: _desktop_launcher_setting.stat.exists
+
+- name: Require an existing Hexen launcher setting to be recognized
+  ansible.builtin.assert:
+    that:
+      - _desktop_launcher_setting_content.content | b64decode | trim in ['fuzzel', 'walker']
+    fail_msg: >-
+      Desktop preflight: {{ _desktop_home }}/.config/hexen/launcher must contain
+      either 'fuzzel' or 'walker'. Review the file before provisioning.
+  when: _desktop_launcher_setting.stat.exists
+
+- name: Check manually installed Walker package set
+  ansible.builtin.command:
+    argv: '{{ ["pacman", "-Q"] + desktop_walker_packages }}'
+  register: _desktop_walker_packages
+  changed_when: false
+  failed_when: false
+  when: desktop_launcher == 'walker'
+
+- name: Require manually installed Walker packages
+  ansible.builtin.assert:
+    that: _desktop_walker_packages.rc == 0
+    fail_msg: >-
+      Walker is selected, but its manually built packages are missing. Follow
+      install/manual-apps/walker/README.md, install the pinned package set, then
+      rerun provisioning. No AUR build or repository is performed automatically.
+  when: desktop_launcher == 'walker'
+
+- name: Inspect required Walker executables
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop: '{{ desktop_walker_executables }}'
+  register: _desktop_walker_executables
+  when: desktop_launcher == 'walker'
+
+- name: Require Walker executables
+  ansible.builtin.assert:
+    that: item.stat.isreg | default(false)
+    fail_msg: >-
+      Walker is selected, but required executable {{ item.item }} is missing.
+      Follow install/manual-apps/walker/README.md and rerun provisioning.
+  loop: '{{ _desktop_walker_executables.results | default([]) }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: desktop_launcher == 'walker'
+
+- name: Inspect required Walker provider files
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop: '{{ desktop_walker_provider_files }}'
+  register: _desktop_walker_provider_files
+  when: desktop_launcher == 'walker'
+
+- name: Require selected Walker providers
+  ansible.builtin.assert:
+    that: item.stat.isreg | default(false)
+    fail_msg: >-
+      Walker is selected, but required provider {{ item.item }} is missing.
+      Follow install/manual-apps/walker/README.md and rerun provisioning.
+  loop: '{{ _desktop_walker_provider_files.results | default([]) }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: desktop_launcher == 'walker'
+
+- name: Inspect Walker user service parent directories
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/{{ item }}'
+    follow: false
+  loop: [.config/systemd, .config/systemd/user]
+  register: _desktop_walker_service_parents
+  when: desktop_launcher == 'walker'
+
+- name: Require real user-owned Walker service directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.isdir | default(false)) and
+         not (item.stat.islnk | default(false)) and
+         item.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Desktop preflight: {{ _desktop_home }}/{{ item.item }} must be absent or
+      a real directory owned by the desktop user.
+  loop: '{{ _desktop_walker_service_parents.results | default([]) }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: desktop_launcher == 'walker'
+
+- name: Inspect the Walker user service destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/systemd/user/{{ desktop_walker_service_name }}'
+    follow: false
+  register: _desktop_walker_service
+  when: desktop_launcher == 'walker'
+
+- name: Preserve an existing unmanaged Walker user service
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_walker_service.stat.exists and not (_desktop_walker_service.stat.islnk | default(false))) or
+        ((_desktop_walker_service.stat.islnk | default(false)) and
+         _desktop_walker_service.stat.lnk_source == desktop_walker_service_source)
+    fail_msg: >-
+      Desktop preflight: refusing to replace an unmanaged user service at
+      {{ _desktop_home }}/.config/systemd/user/{{ desktop_walker_service_name }}.
+  when: desktop_launcher == 'walker'
+
+- name: Inspect desktop helper destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/bin/hexen-desktop'
+    follow: false
+  register: _desktop_helper
+
+- name: Preserve an existing unmanaged desktop helper
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_helper.stat.exists and not (_desktop_helper.stat.islnk | default(false))) or
+        ((_desktop_helper.stat.islnk | default(false)) and
+         _desktop_helper.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen-desktop')
+    fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen-desktop helper.'

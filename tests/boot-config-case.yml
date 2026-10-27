@@ -1,0 +1,44 @@
+---
+- name: Assume the fixture is accepted until validation rejects it
+  ansible.builtin.set_fact:
+    fixture_accepted: true
+
+- name: Audit fixture without reading or modifying boot files
+  block:
+    - name: Validate fixture through the real boot role
+      ansible.builtin.include_role:
+        name: boot
+        tasks_from: validate-config
+      vars:
+        _boot_texts:
+          results:
+            - content: '{{ fixture.limine | default(limine) | b64encode }}'
+            - content: '{{ fixture.mkinitcpio | default(mkinitcpio) | b64encode }}'
+            - content: '{{ fixture.hook | default(update_hook) | b64encode }}'
+            - content: '{{ fixture.preset | default(preset) | b64encode }}'
+        _boot_dropins:
+          matched: '{{ fixture.dropins | default(0) }}'
+        _boot_dropin_dir:
+          stat:
+            islnk: '{{ fixture.dropin_symlink | default(false) }}'
+        _boot_running_cmdline:
+          stdout: '{{ fixture.running | default(cmdline) }}'
+        _boot_ancestry:
+          stdout: '{"blockdevices":[{"children":[{"uuid":"test-uuid","partuuid":"test-partition"}]}]}'
+  rescue:
+    - name: Require an intentional boot audit rejection
+      ansible.builtin.assert:
+        that:
+          - ansible_failed_task.action == 'ansible.builtin.assert'
+          - _errors | length > 0
+          - _errors | map(attribute='msg') | reject('match', '^Boot preflight:') | list | length == 0
+      vars:
+        _errors: '{{ ansible_failed_result.results | default([ansible_failed_result]) | selectattr("failed", "defined") | selectattr("failed") | list }}'
+    - name: Record the rejected configuration
+      ansible.builtin.set_fact:
+        fixture_accepted: false
+
+- name: Collect unexpected decisions
+  ansible.builtin.set_fact:
+    rejected_expectations: '{{ rejected_expectations | default([]) + [fixture.name] }}'
+  when: fixture_accepted != (fixture.accept | default(false))

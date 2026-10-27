@@ -1,13 +1,55 @@
 # Ansible provisioning
 
-The playbook configures an already installed Arch system. It does not partition, format, change encryption, or create firmware NVRAM entries. It installs Limine and writes its EFI binary/config only after checking the configured mountpoint is a mounted FAT GPT EFI System Partition. Review the roles before running them with privilege escalation. Supply the machine's LUKS UUID as a runtime variable; it is not a secret and is not stored in the repository.
+The installed VM passed boot-role integration tests in normal and check mode.
+The full playbook passed syntax validation and two provisioning runs; the
+second run reported zero changes. Offline root/ESP recovery and its final reboot
+passed. Current kernel/Limine reinstall hooks and reboot passed; a true newer-kernel
+upgrade remains untested. See the [investigation record](../install/archinstall/observations-2026-10-25.md)
+and [resume note](../docs/resume.md).
 
-Install Ansible from the official Arch repositories, then run from the repository root:
+Run the playbook inside the target Arch VM during development, not on the host.
+It does not partition, format, change encryption, create firmware entries, or
+write boot files. Archinstall owns Limine's files and update hook. The boot role
+audits that setup first, before the base role changes packages or configuration.
+It discovers root identifiers from the running encrypted mapping; there is no
+runtime UUID argument.
+
+The supported initial boot contract is x86_64 UEFI, LUKS2 directly containing
+Btrfs, mapper `root`, root subvolume `@`, a FAT GPT ESP at `/boot`, and a
+non-UKI Linux entry in `EFI/arch-limine/` using mkinitcpio's `encrypt` hook.
+Unsupported layouts fail validation instead of being rewritten.
+
+The configuration audit deliberately supports one complete flat Limine entry,
+unique root/encryption parameters, one simple `HOOKS=(...)` assignment with the
+supported hook order, and the observed Archinstall Limine copy hook. It verifies
+the default `linux` preset uses the audited configuration, kernel, and initramfs;
+mkinitcpio drop-ins, alternate presets, and custom shell configuration are outside
+this contract. Review those changes explicitly before extending the validator.
+
+The `apps` role runs after `base` and installs Neovim, Lazygit, Obsidian, and
+OBS Studio from official repositories. Its default package list is in
+`roles/apps/defaults/main.yml`. See the [application source inventory](../docs/app-sources.md)
+for versions, trust details, manual-install candidates, and remaining checks.
+It does not install editor plugins or replace user configuration.
+
+For a fresh install, clone this repository to a stable location and run
+[`install/provision.sh`](../install/provision.sh) as the regular desktop account.
+It shows the target and planned actions, downloads the declared Ansible
+collection, checks playbook syntax, and runs the full base and desktop setup.
+Keep the clone at that path after provisioning because the user's configuration
+links point into it. If Ansible is missing, first run `sudo pacman -Syu ansible`
+and reboot if the update replaced the kernel or another component that needs a
+restart.
+
+The equivalent commands from the repository root are:
 
 ```sh
-sudo pacman -S ansible
+sudo pacman -Syu ansible
+export ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg"
+ansible-galaxy collection install -r ansible/requirements.yml
 ansible-playbook --syntax-check -i ansible/inventory/localhost.yml ansible/playbook.yml
-ansible-playbook -i ansible/inventory/localhost.yml ansible/playbook.yml --ask-become-pass -e boot_luks_uuid=YOUR_LUKS_UUID
+ansible-playbook -i ansible/inventory/localhost.yml ansible/playbook.yml \
+  -e desktop_user="$(id -un)" --ask-become-pass
 ```
 
 Roles are intended to be repeatable. Review Ansible's reported changes on every run. The base role enables NetworkManager and sets up memory-backed zram; it does not configure hibernation or disk swap. Verify the result with `swapon --show` and inspect `/etc/systemd/zram-generator.conf`.
@@ -19,3 +61,57 @@ sudo snapper -c root create --description "before-system-update" --type single
 ```
 
 The initial role does not install automatic pacman snapshot hooks. Review Snapper's retention settings before relying on cleanup behavior. The zram generator configuration limits the device to half of RAM, capped at 4 GiB; it has no backing disk or resume configuration.
+
+Use the [recovery guide](../docs/recovery.md) for a matching root/ESP checkpoint
+and offline recovery. Root snapshots do not include `/boot`; a kernel rollback
+must also reconcile the ESP. The documented restoration passed in the VM.
+
+Run the boot integration test as root inside the installed disposable VM:
+
+```sh
+sudo env ANSIBLE_ROLES_PATH="$PWD/ansible/roles" \
+  ansible-playbook -i localhost, tests/boot.yml
+sudo env ANSIBLE_ROLES_PATH="$PWD/ansible/roles" \
+  ansible-playbook -i localhost, tests/boot.yml --check
+```
+
+It accepts the working installation without UUID input, rejects an incorrect
+ESP/root mapper, and checks that boot artifacts remain unchanged.
+
+Run the configuration regression fixtures without root privileges:
+
+```sh
+ANSIBLE_ROLES_PATH="$PWD/ansible/roles" \
+  ansible-playbook -i localhost, tests/boot-config.yml
+```
+
+These exercise the real role's configuration checks using in-memory fixtures.
+They do not read or modify the machine's boot files. The suite includes a valid
+installer configuration and conflicting parameters, split entries, hook
+overrides, invalid update actions, and alternate initramfs configuration.
+
+
+## Optional desktop and owner editor
+
+Supply `-e desktop_user=YOUR_USER` to enable the desktop role after apps. See
+[desktop setup](../docs/desktop.md) for local-TTY startup, editable bindings,
+configuration protection, package details, and known differences from Omarchy.
+The existing base-only invocation remains valid when this variable is omitted.
+Existing user-owned parent directory permissions are preserved; symlinked or
+foreign-owned parents and unmanaged destination configs are refused.
+The entrypoint supplies the invoking regular user's name explicitly. The desktop
+role installs LocalSend from an upstream AppImage pinned by SHA-256; it does not
+install the four manually reviewed applications. Follow
+[`install/manual-apps/README.md`](../install/manual-apps/README.md) separately.
+The base role installs the OpenVPN client; the desktop role adds its NetworkManager
+plugin and the virt-manager/QEMU/KVM host stack. It enables modular libvirt
+sockets and starts the packaged default NAT network. The desktop account is not
+added to the broad `libvirt` group; system VM management uses Polkit. See
+[`docs/virtualization.md`](../docs/virtualization.md) for the package inventory,
+GOAD network isolation, and Windows guest notes.
+
+The editor configuration is the owner's merged Base/Numen/Arcana source, with
+[its own setup and source inventory](../config/nvim/README.md). Provisioning
+links it but does not execute plugin/tool installation as root. Run its explicit
+setup as the desktop user. Meeting/video/screen-sharing and complete project
+language/debugger workflows still need acceptance testing.

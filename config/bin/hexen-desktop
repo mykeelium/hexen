@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+missing() { notify-send 'Hexen' "$1 is not installed. See docs/app-sources.md."; exit 1; }
+
+selected_launcher() {
+  local config="$HOME/.config/hexen/launcher" backend
+  if [[ ! -r $config ]]; then
+    printf 'walker\n'
+    return
+  fi
+  IFS= read -r backend < "$config" || true
+  case "$backend" in
+    fuzzel|walker) printf '%s\n' "$backend" ;;
+    *) printf 'Invalid launcher setting in %s\n' "$config" >&2; return 2 ;;
+  esac
+}
+
+pick_menu() {
+  local prompt=${1:?menu prompt is required} backend
+  shift
+  backend=$(selected_launcher) || exit 2
+  case "$backend" in
+    fuzzel)
+      command -v fuzzel >/dev/null || missing Fuzzel
+      fuzzel --dmenu --prompt="$prompt" "$@" ;;
+    walker)
+      command -v walker >/dev/null || missing Walker
+      walker --dmenu --placeholder="$prompt" "$@" ;;
+  esac
+}
+
+launch_apps() {
+  local backend
+  backend=$(selected_launcher) || exit 2
+  case "$backend" in
+    fuzzel)
+      command -v fuzzel >/dev/null || missing Fuzzel
+      exec fuzzel ;;
+    walker)
+      command -v walker >/dev/null || missing Walker
+      exec walker ;;
+  esac
+}
+
+case "${1:-}" in
+  launcher) launch_apps ;;
+  start-session)
+    backend=$(selected_launcher) || exit 2
+    if [[ $backend == walker ]]; then
+      command -v walker >/dev/null || missing Walker
+      command -v elephant >/dev/null || missing Elephant
+      systemctl --user daemon-reload
+      systemctl --user start hexen-elephant.service
+      exec walker --gapplication-service
+    fi ;;
+  browser|browser-private)
+    command -v zen-browser >/dev/null || missing 'Zen Browser'
+    if [[ $1 == browser-private ]]; then exec zen-browser --private-window; fi
+    exec zen-browser ;;
+  passwords)
+    command -v 1password >/dev/null || missing '1Password'
+    exec 1password ;;
+  clipboard)
+    entries=$(cliphist list) || exit 1
+    [[ -n $entries ]] || exit 0
+    choice=$(printf '%s\n' "$entries" | pick_menu 'Clipboard: ') || exit 0
+    [[ -n $choice ]] || exit 0
+    printf '%s\n' "$choice" | cliphist decode | wl-copy ;;
+  screenshot)
+    region=$(slurp) || exit 0
+    grim -g "$region" - | wl-copy --type image/png
+    notify-send 'Screenshot' 'Region copied to clipboard' ;;
+  menu)
+    choice=$(printf '%s\n' 'Applications' 'Edit keybindings' 'Edit theme' 'System' | pick_menu 'Hexen: ') || exit 0
+    case "$choice" in
+      Applications) exec "$0" launcher ;;
+      'Edit keybindings') exec ghostty nvim "$HOME/.config/hypr/bindings.lua" ;;
+      'Edit theme') exec ghostty nvim "$HOME/.config/hypr/theme.lua" ;;
+      System) exec "$0" system-menu ;;
+    esac ;;
+  system-menu)
+    choice=$(printf '%s\n' \
+      '  Lock' \
+      '󰒲  Suspend' \
+      '󰍃  Log out' \
+      '󰜉  Restart' \
+      '󰐥  Shut down' \
+      | pick_menu 'System  ›  ') || exit 0
+    case "$choice" in
+      *Lock*) exec loginctl lock-session ;;
+      *Suspend*) exec systemctl suspend ;;
+      *'Log out'*) exec hyprctl dispatch 'hl.dsp.exit()' ;;
+      *Restart*) exec systemctl reboot ;;
+      *'Shut down'*) exec systemctl poweroff ;;
+    esac ;;
+  *) printf 'Usage: %s {launcher|start-session|browser|browser-private|passwords|clipboard|screenshot|menu|system-menu}\n' "$0" >&2; exit 2 ;;
+esac

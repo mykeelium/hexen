@@ -1,110 +1,161 @@
 ---
-- name: Install Limine from the official Arch repository
-  ansible.builtin.package:
-    name: '{{ boot_packages }}'
-    state: present
-
-- name: Require a per-machine LUKS UUID
+# Archinstall owns the boot files. This role only audits its supported layout.
+# Read-only commands run even in Ansible check mode.
+- name: Require the supported Arch UEFI environment
   ansible.builtin.assert:
     that:
-      - boot_luks_uuid is defined
-      - boot_luks_uuid | default('') | length > 0
-      - boot_luks_uuid | default('') != 'REPLACE_WITH_LUKS_UUID'
-    fail_msg: Supply this machine's LUKS UUID with -e boot_luks_uuid=...; it is not stored in the repository.
+      - ansible_facts.distribution == 'Archlinux'
+      - ansible_facts.architecture == 'x86_64'
+    fail_msg: 'Boot preflight: expected an installed x86_64 Arch system.'
 
-- name: Check EFI mountpoint
-  ansible.builtin.command:
-    argv:
-      - findmnt
-      - --noheadings
-      - --mountpoint
-      - '{{ boot_esp_mountpoint }}'
-  register: esp_mount
-  changed_when: false
+- name: Check UEFI firmware availability
+  ansible.builtin.stat:
+    path: /sys/firmware/efi
+  register: _boot_uefi
 
-- name: Require the ESP to be mounted as FAT
+- name: Require a UEFI boot
   ansible.builtin.assert:
     that:
-      - esp_mount.rc == 0
-    fail_msg: The expected ESP mountpoint is not mounted; no boot files were written.
+      - _boot_uefi.stat.isdir | default(false)
+    fail_msg: 'Boot preflight: the system must be booted with UEFI.'
 
-- name: Read ESP filesystem type
+- name: Read the running root mount
   ansible.builtin.command:
-    argv:
-      - findmnt
-      - --noheadings
-      - --output
-      - FSTYPE
-      - --mountpoint
-      - '{{ boot_esp_mountpoint }}'
-  register: esp_fstype
+    argv: [findmnt, --json, --output, 'SOURCE,FSTYPE,FSROOT', --mountpoint, /]
+  register: _boot_root_query
   changed_when: false
+  check_mode: false
 
-- name: Require FAT ESP
+- name: Require the expected running root
   ansible.builtin.assert:
     that:
-      - esp_fstype.stdout in ['vfat', 'fat', 'msdos']
-    fail_msg: Expected a FAT EFI System Partition at {{ boot_esp_mountpoint }}; no boot files were written.
+      - _root.fstype == 'btrfs'
+      - _root.fsroot == '/' ~ boot_root_subvolume
+      - _root.source.split('[')[0] == '/dev/mapper/' ~ boot_root_mapper
+    fail_msg: 'Boot preflight: the running root does not match the expected encrypted Btrfs mapper/subvolume.'
+  vars:
+    _root: '{{ (_boot_root_query.stdout | from_json).filesystems | first }}'
 
-- name: Read ESP device path
+- name: Read the expected ESP mount
   ansible.builtin.command:
-    argv:
-      - findmnt
-      - --noheadings
-      - --output
-      - SOURCE
-      - --mountpoint
-      - '{{ boot_esp_mountpoint }}'
-  register: esp_source
+    argv: [findmnt, --json, --output, 'SOURCE,FSTYPE', --mountpoint, '{{ boot_esp_mountpoint }}']
+  register: _boot_esp_query
   changed_when: false
+  failed_when: _boot_esp_query.rc not in [0, 1]
+  check_mode: false
 
-- name: Read partition type for ESP
-  ansible.builtin.command:
-    argv:
-      - lsblk
-      - --noheadings
-      - --nodeps
-      - --output
-      - PARTTYPE
-      - '{{ esp_source.stdout }}'
-  register: esp_partition_type
-  changed_when: false
-
-- name: Require GPT EFI System Partition
+- name: Require a mounted FAT EFI System Partition
   ansible.builtin.assert:
     that:
-      - esp_partition_type.stdout | lower == 'c12a7328-f81f-11d2-ba4b-00a0c93ec93b'
-    fail_msg: The mounted FAT partition is not identified as a GPT EFI System Partition; no boot files were written.
+      - _boot_esp_query.rc == 0
+      - _esp.fstype | default('') == 'vfat'
+    fail_msg: 'Boot preflight: expected a mounted FAT EFI System Partition at {{ boot_esp_mountpoint }}.'
+  vars:
+    _esp: '{{ ((_boot_esp_query.stdout | from_json).filesystems | first) if _boot_esp_query.rc == 0 else {} }}'
 
-- name: Create Limine EFI application directory
-  ansible.builtin.file:
-    path: '{{ boot_esp_mountpoint }}/EFI/limine'
-    state: directory
-    owner: root
-    group: root
-    mode: '0755'
+- name: Read the ESP partition type
+  ansible.builtin.command:
+    argv: [lsblk, --noheadings, --nodeps, --output, PARTTYPE, '{{ ((_boot_esp_query.stdout | from_json).filesystems | first).source }}']
+  register: _boot_esp_type
+  changed_when: false
+  check_mode: false
 
-- name: Copy Limine UEFI executable to verified ESP
-  ansible.builtin.copy:
-    src: /usr/share/limine/BOOTX64.EFI
-    dest: '{{ boot_esp_mountpoint }}/EFI/limine/BOOTX64.EFI'
-    remote_src: true
-    owner: root
-    group: root
-    mode: '0644'
+- name: Require a GPT EFI System Partition
+  ansible.builtin.assert:
+    that:
+      - _boot_esp_type.stdout | lower == 'c12a7328-f81f-11d2-ba4b-00a0c93ec93b'
+    fail_msg: 'Boot preflight: the mounted filesystem is not a GPT EFI System Partition.'
 
-- name: Write common kernel command line
-  ansible.builtin.template:
-    src: kernel-cmdline.j2
-    dest: /etc/kernel/cmdline
-    owner: root
-    group: root
-    mode: '0644'
+- name: Inspect the active encrypted mapping
+  ansible.builtin.command:
+    argv: [cryptsetup, status, '{{ boot_root_mapper }}']
+  register: _boot_mapping
+  changed_when: false
+  check_mode: false
 
-- name: Render Limine configuration on the verified ESP
-  ansible.builtin.template:
-    src: limine.conf.j2
-    dest: '{{ boot_esp_mountpoint }}/limine.conf'
-    owner: root
-    group: root
-    mode: '0644'
+- name: Require LUKS2
+  ansible.builtin.assert:
+    that:
+      - "'LUKS2' in _boot_mapping.stdout"
+    fail_msg: 'Boot preflight: the running root mapping must use LUKS2.'
+
+- name: Read the encrypted root device ancestry
+  ansible.builtin.command:
+    argv: [lsblk, --inverse, --json, --paths, --output, 'NAME,TYPE,FSTYPE,UUID,PARTUUID', '/dev/mapper/{{ boot_root_mapper }}']
+  register: _boot_ancestry
+  changed_when: false
+  check_mode: false
+
+- name: Require a direct LUKS partition below the root mapping
+  ansible.builtin.assert:
+    that:
+      - _mapping.type == 'crypt'
+      - _mapping.children | default([]) | length == 1
+      - (_mapping.children | first).fstype == 'crypto_LUKS'
+      - (_mapping.children | first).uuid | length > 0
+      - (_mapping.children | first).partuuid | length > 0
+    fail_msg: 'Boot preflight: expected Btrfs directly inside one LUKS partition, without LVM.'
+  vars:
+    _mapping: '{{ (_boot_ancestry.stdout | from_json).blockdevices | first }}'
+
+- name: Check the installer-owned boot artifacts
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop:
+    - '{{ boot_esp_mountpoint }}/vmlinuz-linux'
+    - '{{ boot_esp_mountpoint }}/initramfs-linux.img'
+    - '{{ boot_esp_mountpoint }}/EFI/arch-limine/BOOTX64.EFI'
+    - '{{ boot_esp_mountpoint }}/EFI/arch-limine/limine.conf'
+    - /etc/pacman.d/hooks/99-limine.hook
+    - /etc/mkinitcpio.conf
+    - /etc/mkinitcpio.d/linux.preset
+  register: _boot_artifacts
+
+- name: Require all boot artifacts before provisioning
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg | default(false)
+    fail_msg: 'Boot preflight: required installer-owned boot artifact is missing: {{ item.item }}.'
+  loop: '{{ _boot_artifacts.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Read the installer-owned boot configuration
+  ansible.builtin.slurp:
+    src: '{{ item }}'
+  loop:
+    - '{{ boot_esp_mountpoint }}/EFI/arch-limine/limine.conf'
+    - /etc/mkinitcpio.conf
+    - /etc/pacman.d/hooks/99-limine.hook
+    - /etc/mkinitcpio.d/linux.preset
+  register: _boot_texts
+
+- name: Inspect the mkinitcpio drop-in directory
+  ansible.builtin.stat:
+    path: /etc/mkinitcpio.conf.d
+  register: _boot_dropin_dir
+
+- name: Look for unsupported mkinitcpio configuration overrides
+  ansible.builtin.find:
+    paths: /etc/mkinitcpio.conf.d
+    patterns: '*.conf'
+    file_type: any
+    hidden: true
+  when: _boot_dropin_dir.stat.isdir | default(false)
+  register: _boot_dropins
+
+- name: Read the running kernel command line
+  ansible.builtin.command:
+    argv: [cat, /proc/cmdline]
+  register: _boot_running_cmdline
+  changed_when: false
+  check_mode: false
+
+- name: Audit the saved and running boot configuration
+  ansible.builtin.include_tasks: validate-config.yml
+
+- name: Verify the deployed EFI executable matches the installed package
+  ansible.builtin.command:
+    argv: [cmp, --silent, /usr/share/limine/BOOTX64.EFI, '{{ boot_esp_mountpoint }}/EFI/arch-limine/BOOTX64.EFI']
+  changed_when: false
+  check_mode: false

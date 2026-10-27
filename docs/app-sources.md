@@ -1,0 +1,328 @@
+# Application sources
+
+Reviewed on 2026-10-27 for x86_64 Arch. Package versions are observations, not
+pins. Refresh this review when recipes, source URLs, privileges, or signatures
+change. The apps role installs four applications from official Arch repositories.
+The desktop role also installs selected official command-line tools and the
+checksum-pinned LocalSend AppImage. The other four non-repository applications were
+built, inspected, and installed in the VM using reviewed one-off commands on
+2026-10-26; no AUR automation is added to Ansible.
+
+VM verification: the first full provisioning run installed the official apps
+(`ok=42 changed=1 failed=0`); the second reported `ok=42 changed=0 failed=0`.
+Neovim startup and Lazygit version output passed. The merged owner editor and
+Obsidian's initial vault-selection window were also verified in the VM desktop;
+no account sign-in or vault creation was performed.
+The installed package manifest and dependency diff are retained in the VM under
+`/home/mcuomo/hexen-vm-recovery/packages-after-apps.txt` and
+`app-package-diff.txt`.
+
+## Source and update inventory
+
+## Requested CLI utilities
+
+These requested tools are available from signed Arch `extra` packages; none
+requires the AUR. `jq` was already in the desktop package list. The role now adds
+the other packages. Arch package names and useful command details:
+
+| Tool | Arch package | Note |
+| --- | --- | --- |
+| bat | [`bat`](https://archlinux.org/packages/extra/x86_64/bat/) | Bash `cat` alias uses `bat --paging=never`. |
+| rsync | [`rsync`](https://archlinux.org/packages/extra/x86_64/rsync/) | File synchronization. |
+| FreeRDP | [`freerdp`](https://archlinux.org/packages/extra/x86_64/freerdp/) | Version 3 client command is `xfreerdp3`. |
+| jq | [`jq`](https://archlinux.org/packages/extra/x86_64/jq/) | Already installed by the role. |
+| yq | [`go-yq`](https://archlinux.org/packages/extra/x86_64/go-yq/) | Arch package name for Mike Farah’s Go-based `yq` CLI; command is `yq`. The separate `yq` package is kislyuk’s jq wrapper. |
+| tldr | [`tldr`](https://archlinux.org/packages/extra/any/tldr/) | Community command examples. |
+| eza | [`eza`](https://archlinux.org/packages/extra/x86_64/eza/) | Modern `ls` replacement; no alias is forced. |
+| btop | [`btop`](https://archlinux.org/packages/extra/x86_64/btop/) | The package page was flagged out-of-date on 2026-10-25; it remains an official signed package. |
+| fzf | [`fzf`](https://archlinux.org/packages/extra/x86_64/fzf/) | Fuzzy finder. |
+| just | [`just`](https://archlinux.org/packages/extra/x86_64/just/) | Project command runner. |
+| GitHub CLI (`gh`) | [`github-cli`](https://archlinux.org/packages/extra/x86_64/github-cli/) | The package page was flagged out-of-date on 2026-10-21; it remains an official signed package. |
+| sd | [`sd`](https://archlinux.org/packages/extra/x86_64/sd/) | Intuitive, regex-aware find and replace; installed from signed Arch `extra`. |
+| zip | [`zip`](https://archlinux.org/packages/extra/x86_64/zip/) | Create and modify `.zip` archives; `unzip` is already installed for extraction. `tar` is included through the Arch `base` package group. |
+
+Additional requested tools are also in the official repository:
+
+| Tool | Arch package | Note |
+| --- | --- | --- |
+| Lazydocker | [`lazydocker`](https://archlinux.org/packages/extra/x86_64/lazydocker/) | Uses Podman's rootless Docker-compatible socket; Compose commands are configured as `podman compose`. |
+| Bluetui | [`bluetui`](https://archlinux.org/packages/extra/x86_64/bluetui/) | BlueZ Bluetooth TUI; opened by Super+Shift+I in a centered floating Ghostty window. |
+| Yazi | [`yazi`](https://archlinux.org/packages/extra/x86_64/yazi/) | `fd`, `fzf`, `jq`, `ripgrep`, and `wl-clipboard` are already selected; media/archive/PDF previews have optional dependencies. |
+| Navi | [`navi`](https://archlinux.org/packages/extra/x86_64/navi/) | Uses the already selected `fzf`. |
+| dust | [`dust`](https://archlinux.org/packages/extra/x86_64/dust/) | Disk-usage viewer. |
+| tokei | [`tokei`](https://archlinux.org/packages/extra/x86_64/tokei/) | Code line counter. |
+| pgcli | [`pgcli`](https://archlinux.org/packages/extra/any/pgcli/) | PostgreSQL interactive CLI. |
+| Git diff pager | [`git-delta`](https://archlinux.org/packages/extra/x86_64/git-delta/) | Configured as the global Git pager with side-by-side output, line numbers, and navigation. |
+| Podman | [`podman`](https://archlinux.org/packages/extra/x86_64/podman/) | Rootless container engine from `extra`; no Docker Desktop or rootful Docker daemon. |
+| Podman Compose | [`podman-compose`](https://archlinux.org/packages/extra/any/podman-compose/) | Provider used by `podman compose` and LazyDocker. |
+
+[`difftastic`](https://archlinux.org/packages/extra/x86_64/difftastic/) is
+another official option for syntax-aware structural diffs, but it is not the
+default pager here. Delta is the smaller, general-purpose everyday viewer.
+The optional `podman-docker` package is intentionally not installed: this setup
+uses `podman` explicitly and leaves the `docker` command name available for a
+future Docker Engine installation.
+
+The official package path uses pacman signatures and normal full-system
+upgrades. The out-of-date flags are a freshness signal, not an AUR requirement;
+review those package pages again when refreshing this inventory.
+
+## Source and update inventory
+
+| Application | Source and package | Update path | Current decision |
+| --- | --- | --- | --- |
+| Neovim | [Upstream](https://neovim.io/doc/install/), signed Arch `extra/neovim` | Full `pacman -Syu` | Automated; observed 0.12.6-1. Owner configuration merged and tested; see editor inventory below. |
+| Lazygit | [Upstream](https://github.com/jesseduffield/lazygit), signed Arch `extra/lazygit` | Full `pacman -Syu` | Automated; observed 0.66.2-1. |
+| Obsidian | [Vendor](https://obsidian.md/download), signed Arch [extra/obsidian](https://archlinux.org/packages/extra/x86_64/obsidian/) | Full `pacman -Syu` | Automated; observed 1.14.5-1, using Arch's electron43 dependency. App is proprietary; official repository does not mean open source. |
+| OBS Studio | [Upstream](https://obsproject.com/), signed Arch [extra/obs-studio](https://archlinux.org/packages/extra/x86_64/obs-studio/) | Full `pacman -Syu` | Automated; official package was flagged out-of-date on 2026-10-23, so refresh this source review before relying on a particular feature/version. Hyprland screen capture uses the existing PipeWire portal. |
+| Zen Browser | [Vendor downloads](https://zen-browser.app/download/), candidate [zen-browser-bin](https://aur.archlinux.org/packages/zen-browser-bin) | Review updated AUR recipe, rebuild and install via pacman | Installed manually in VM after source/hash and archive checks; launch acceptance pending. |
+| 1Password | [Vendor Arch instructions](https://support.1password.com/install-linux/#arch-linux), candidate [1password](https://aur.archlinux.org/packages/1password) | Review updated AUR recipe and vendor signing key, rebuild | Installed manually in VM after checksum/signature/archive checks. Privileged helper details below; account integration pending. |
+| Zoom | [Vendor Arch package](https://zoom.us/download/linux), candidate [zoom](https://aur.archlinux.org/packages/zoom) | Review versioned AUR recipe and rebuild; vendor `pacman -U` is an alternative manual path | Installed manually in VM after checksum/archive checks; call devices and screen sharing still need live acceptance. Under Wayland, Zoom documents whole-desktop or whiteboard sharing; application-window sharing requires Xorg. |
+| Slack | [Vendor Linux instructions](https://slack.com/help/articles/212924728-Download-Slack-for-Linux--beta-), candidate [slack-desktop](https://aur.archlinux.org/packages/slack-desktop) | Review updated AUR recipe and rebuild | Installed manually in VM after checksum/archive checks. Repackages vendor Debian binary; Arch packaging is community maintained. |
+| LocalSend | [Official Linux downloads](https://localsend.org/download), official GitHub [1.18.2 x86_64 AppImage](https://github.com/localsend/localsend/releases/download/v1.18.2/LocalSend-1.18.2-linux-x86-64.AppImage) | Desktop role downloads the pinned release with SHA-256 verification | Installed in the VM from the official AppImage; its SHA-256 matched the recorded pin. Version, URL, and hash are in `ansible/roles/desktop/defaults/main.yml`. Upstream also lists `localsend-bin` from AUR; this setup uses the official AppImage and does not run AUR recipes. |
+
+LocalSend is not an official Arch repository package. The desktop role downloads
+the upstream x86_64 AppImage with SHA-256 verification and creates a per-user menu
+entry. It requires the official `fuse2` runtime included in the desktop role.
+LocalSend transfers over the local network; if a firewall is enabled, allow its
+configured TCP and UDP ports only on trusted LANs. The default port is 53317;
+see the [ArchWiki LocalSend entry](https://wiki.archlinux.org/title/LocalSend).
+
+At the 2026-10-26 VM checkpoint, the refreshed official package databases
+contained Neovim, Lazygit, and Obsidian; the manual candidate packages were not
+in the official repositories. OBS Studio was added to the automatic official
+package role on 2026-10-27. No third-party pacman repository, Flatpak remote, AUR helper, or downloaded
+installer script has been added. A vendor public key was imported only into
+the VM build user's GPG keyring for source verification, as recorded below.
+
+## AUR recipe inspection
+
+The following commits identify the exact recipes inspected, built as the normal
+VM user, and installed after archive inspection. They do not assure later
+updates or constitute an audit of proprietary application binaries. Maintainer
+comments are recipe claims, not independently verified identities. All declared
+source checksums passed; 1Password's detached vendor signature also passed.
+
+| Recipe | Inspected commit | Version |
+| --- | --- | --- |
+| `zen-browser-bin` | `ff5b152a31356577936690ccd32599e851326b85` | 1.23.4b-1 |
+| `1password` | `c384584bedaa1ffebd3939d03a52bf4ff48e2bff` | 8.12.42-36 |
+| `zoom` | `9cf1e9686715d0677db2eb4106c2d59aee6d7ca0` | 7.2.1-1 |
+| `slack-desktop` | `67c43c14906ddc96749f3c9b682bd9f5894d7251` | 4.52.182-1 |
+
+### Zen
+
+The recipe names Luis Vervaet as maintainer. It downloads a versioned binary
+tarball from `github.com/zen-browser/desktop/releases`, with SHA-256 hashes for
+the x86_64/aarch64 payloads and local launcher, desktop entry, and policies.
+No detached upstream signature is declared. Its package function copies into
+`/opt/zen-browser-bin`, installs launchers/icons, and uses system dictionaries
+and certificate storage. There is no install script.
+
+The inspected `policies.json` disables in-app updates and sets
+`DefaultSerialGuardSetting` to 3. Updates therefore depend on rebuilding the
+package; those browser-policy changes are part of the review. The executable
+desktop entries launch `/opt/zen-browser-bin/zen-bin`; the wrapper is
+`/usr/bin/zen-browser`. Do not use an unrelated repository with signature checks
+disabled. Browser-extension integration with 1Password must be tested separately.
+
+### 1Password
+
+The recipe downloads a versioned vendor tarball and detached signature from
+`downloads.1password.com`. It declares SHA-256 hashes and restricts verification
+to fingerprint `3FEF9748469ADBE15DA7CA80AC2D62742012EA22`, matching the vendor's
+published Linux signing fingerprint at review time. The vendor's own installation
+guide directs Arch users to this AUR package. This does not make the AUR itself
+a signed Arch repository.
+
+The package function installs into `/opt/1Password`, installs icons/desktop
+integration and a Polkit policy generated from the build host's first ten
+four-digit-UID users. It uses shell `eval` to expand a vendor policy template.
+This makes the build-host account list relevant: inspect the resulting policy
+before installing the package on another machine.
+
+The root-run install script creates a `onepassword` group and makes
+`1Password-BrowserSupport` setgid to that group. The build also sets the
+`chrome-sandbox` executable to mode 4755. These are intentional privileged
+integration helpers and must be inspected in the resulting package. Do not add
+the user to the helper group. Uninstall removes the group. During VM validation, the vendor public key was
+fingerprint-checked against its official documentation and imported only into
+the build user's GPG keyring. The source signature passed. Installation created
+the documented helper group/permissions; the desktop user was not added to that
+group. The generated Polkit owners list contains only `unix-user:mcuomo`.
+
+The [vendor notes](https://support.1password.com/install-linux/) that sandboxed
+Snap/Flatpak distributions lack system-unlock, SSH-agent, and desktop/browser
+integration features; that is why native packaging is the candidate here.
+
+### Zoom
+
+The recipe names Gordian Edenhofer and Christian Heusel as maintainers. It
+downloads the versioned vendor Arch archive from
+`zoom.us/client/7.2.1.5760/zoom_x86_64.pkg.tar.xz`, verifies a SHA-512 checksum,
+and copies its `opt` and `usr` trees without preserving upstream ownership.
+No detached signature or install script is declared. The vendor supports
+manual installation of its Arch archive through `pacman -U`; see its
+[Linux instructions](https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0063458).
+That manual archive does not establish an automatic pacman update source.
+
+The recipe declares X11/PulseAudio/GTK libraries and Mesa among its dependencies.
+The desktop role installs PipeWire, WirePlumber,
+`xdg-desktop-portal-hyprland`, and selects Hyprland as the ScreenCast portal
+backend. These provide the Wayland capture path, but do not by themselves prove
+microphone/camera or Zoom screen sharing works. Zoom's current Linux help says a
+Wayland session can share the entire desktop or a whiteboard, while sharing one
+application window requires Xorg. This setup remains Hyprland/Wayland, so the
+supported native Zoom workflow is whole-desktop sharing. Do not install optional
+X11 compositors merely because they appear in `optdepends`.
+
+### Slack
+
+The recipe names Oscar Garcia Amor as maintainer. It downloads a versioned
+`.deb` from `downloads.slack-edge.com` and checks BLAKE2 hashes for that artifact
+and a local desktop-entry patch. No detached signature or install script is
+declared. Its package function extracts the Debian data archive, patches the
+launcher, adjusts directory permissions, removes bundled `/etc` and irrelevant
+documentation, and relocates the license.
+
+The patch changes the launch command to `slack --gtk-version=3 -s` and uses the
+themed icon name. Review these flags with desktop testing. `libsecret` is a
+dependency, but that alone does not provide an unlocked Secret Service session.
+Decide and test the desktop keyring before work sign-in. Do not disable the
+Electron sandbox to make an untested desktop launch succeed.
+
+## Manual installation procedure after review
+
+Run as a normal build user in the disposable VM first. Substitute one package
+name from the table, clone its exact AUR repository, and inspect all tracked
+files. Do not run `makepkg` as root. Inspect recipe updates before rebuilding.
+
+```sh
+git clone https://aur.archlinux.org/PACKAGE_NAME.git
+cd PACKAGE_NAME
+git rev-parse HEAD
+git ls-files
+less PKGBUILD .SRCINFO
+# Read every referenced install script, patch, policy, and launcher too.
+makepkg --verifysource
+makepkg --syncdeps
+pacman -Qip ./ACTUAL_BUILT_PACKAGE.pkg.tar.zst
+bsdtar -tvf ./ACTUAL_BUILT_PACKAGE.pkg.tar.zst
+sudo pacman -U ./ACTUAL_BUILT_PACKAGE.pkg.tar.zst
+```
+
+`makepkg` sources the recipe even for source verification; perform the text
+review first. For 1Password, independently compare the vendor key fingerprint
+before importing it into the build user's GPG keyring. Do not skip PGP checks.
+The package archive suffix may differ from the example; inspect the actual
+output rather than assuming its filename. Review any additional AUR dependencies
+with the same process. Installing dependencies through pacman should use a
+fully updated system; never use a database-only refresh followed by a partial
+upgrade.
+
+## Desktop and editor sources
+
+The owner supplied `mykeelium/nvim-config` and requested Base plus additions
+from Numen and Arcana. The imported commit is
+`e45b8249bfb152c20f9089100ca95f00eeef5ba1`. See
+[editor provenance and setup](../config/nvim/README.md) and the
+[34-plugin source/commit inventory](../config/nvim/PLUGIN-SOURCES.md).
+Only source configuration and lockfiles were copied; the upstream `nvim-data`
+cache and machine binaries were excluded. The local host config was not changed.
+
+Plugin-manager bootstrap is pinned to the owner's lockfile. Plugins and build
+hooks run as the desktop user. The explicit `setup.lua` step installs 13 grammar
+parsers from the pinned Treesitter registry and five tools through Mason:
+Lua language server, OmniSharp, gopls, basedpyright, and Ruff. These downloads
+use upstream GitHub/PyPI/Go channels and are outside pacman's signature/update
+system. Their installed versioned identifiers are recorded in the editor README
+and Mason receipts; a plugin lockfile does not pin those tool versions. Normal
+editor startup does not automatically install language tools.
+
+The optional desktop role installs official Arch packages. Its complete
+common list in `ansible/roles/desktop/defaults/main.yml` includes Hyprland,
+Ghostty, Zellij, Waybar, Mako, Nautilus, PipeWire/WirePlumber, portals, lock/idle and
+clipboard tools, fonts, and editor dependencies. The install-time launcher
+defaults to Walker, using the separately reviewed manual package set; Fuzzel
+remains available as an explicit choice. These include Python/pynvim,
+Go and Delve, Node/npm, uv, .NET SDK, and the parser/compiler/search tools.
+No system-wide pip/npm install is performed. Fonts and runtime dependencies
+are explicit package choices rather than downloads hidden in a theme framework.
+
+Walker and Elephant are not selected from official Arch repositories in this
+setup. The Walker default uses pinned, reviewed AUR packaging recipes that fetch versioned
+upstream Walker/Elephant GitHub sources with SHA-256 checks; see
+[`install/manual-apps/walker/`](../install/manual-apps/walker/). Those builds
+remain manual and are not updated by `pacman -Syu`. The Fuzzel choice uses the
+official `extra/fuzzel` package. The four third-party
+applications were installed after the manual validation
+below. GUI and work-account integrations remain pending.
+
+## Running .NET Framework applications on Arch
+
+The desktop role installs Arch's signed official [`extra/mono`](https://archlinux.org/packages/extra/x86_64/mono/)
+package; it does not use the AUR and Wine is not installed. Mono is a native
+Linux implementation rather than Microsoft's Windows-only .NET Framework.
+Mono 5.18 added .NET Framework 4.7.2 reference assemblies for targeting, and
+the current Arch `mono` package includes its `4.7.2-api` assemblies. It can run
+many compatible managed apps directly with `mono app.exe`, but it is not a
+complete substitute for Microsoft .NET Framework. The Mono compatibility guide
+lists WPF as unimplemented and WCF/ASP.NET support as limited. Rider documents
+that it can build .NET Framework projects with MSBuild or Mono's XBuild and can
+detect Mono on Linux. The `mono` package includes XBuild. Check each app's Windows-specific API and UI dependencies;
+unsupported apps still require Windows. See [the desktop guide](desktop.md#packages-services-and-data).
+
+A full repository refresh on 2026-10-26 resolved an initial mirror 404 for a
+`python-dbus` signature; signature checking was never disabled. That full
+upgrade updated btrfs-progs, libsoup3, and llvm-libs, with the same kernel version.
+The desktop transaction then installed its signed dependencies. Its package
+manifest/diff are saved under `/home/mcuomo/hexen-vm-recovery/` in
+`packages-after-desktop.txt` and `desktop-package-diff.txt`.
+
+
+## Manual VM installation evidence, 2026-10-26
+
+The owner requested continued implementation. Manual here means a reviewed,
+one-off source/build/inspection/install sequence, not an unattended AUR helper
+or Ansible build task. The agent executed those commands in the disposable VM
+as the normal build user; root was used only for signed dependency installation
+and the final inspected `pacman -U` transaction. No builds ran as root, no
+signature checks were bypassed, and no trust prompts were auto-approved.
+
+- Current remote recipe heads matched the recorded reviewed commits.
+- All four `makepkg --verifysource` checks passed. 1Password also passed its
+  detached OpenPGP check with the independently compared vendor fingerprint.
+  Other recipes use hashes and HTTPS without a detached upstream signature.
+- Missing official dependencies were installed as dependencies: `mailcap`
+  (provides `mime-types`), `dbus-glib`, `ttf-dejavu` (provides `ttf-font`), `libxss`.
+- Builds completed without root or recipe-driven sudo. Every archive path and
+  uid/gid was inspected; all stored owners were root. The only install script was
+  exactly the reviewed `1password.install`. The only privileged archive modes
+  were the expected 4755 Chromium sandbox helpers in 1Password and Slack.
+- 1Password's build emitted `libfakeroot internal error: payload not recognized`
+  during tidying but exited successfully. Archive ownership/mode assertions and
+  post-install integrity checks passed; the warning is retained in the build log.
+- Root rechecked every artifact SHA-256 before one `pacman -U` transaction.
+  The local packages are unsigned AUR builds, not signed Arch packages. The
+  1Password *source* signature is a separate trust property.
+- `pacman -Qkk` reports zero altered files for Zen, Zoom, and Slack. 1Password's
+  only altered file is BrowserSupport: its reviewed install script intentionally
+  changes group to `onepassword` and mode to 2755. Its sandbox is root:root 4755;
+  Slack's sandbox is root:root 4755. The desktop user remains outside the helper
+  group. No new systemd service/autostart unit was found in the inspected archives.
+
+Recipe trees, source artifacts, `verify.log`, `build.log`, and built archives
+are retained under `/home/mcuomo/hexen-vm-builds/`. The build manifest is
+`verified-packages.json`; a portable record is in
+[`install/manual-apps/validation-2026-10-26.json`](../install/manual-apps/validation-2026-10-26.json).
+Hashes identify this inspected VM build; generated policy/account content and
+build timestamps mean a fresh build can differ. Rebuild and review per target.
+Package manifests, transaction/integrity logs, and package diffs are under
+`/home/mcuomo/hexen-vm-recovery/`. Snapshot 4 precedes this installation.
+
+The existing browser/password shortcuts should become usable once GUI launch
+checks pass. Default-browser association and 1Password/Zen extension integration
+still need explicit configuration/acceptance. Account sign-in is owner-only.
+The [vendor custom-browser procedure](https://support.1password.com/additional-browsers/)
+and [Zen integration guide](https://docs.zen-browser.app/guides/1password) describe
+allowing `zen-bin`; no browser trust allowlist has been changed yet.

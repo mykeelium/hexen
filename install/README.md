@@ -4,6 +4,11 @@ This repository is built and proven in a disposable VM before it is used on a la
 
 ## Create the disposable VM
 
+For the libvirt VM creation command, graphical-console access, and SSH bootstrap,
+follow the [VM development workflow](vm/README.md). See the
+[2026-10-25 investigation record](archinstall/observations-2026-10-25.md) for
+installation evidence and the [resume note](../docs/resume.md) for current state.
+
 Use the official Arch Linux installation ISO as the boot medium. The QCOW2 files published by Arch's `arch-boxes` project are preinstalled basic or cloud images; they are virtual disks, not installation ISOs. If you want to keep the downloaded QCOW, leave it untouched and attach a separate empty virtual disk as the install target.
 
 Suggested VM starting point:
@@ -43,6 +48,46 @@ The EFI System Partition is necessarily unencrypted in this setup and contains o
 ## After installation
 
 Before adding desktop configuration, confirm that the VM boots through Limine, requests the LUKS passphrase, and mounts the encrypted Btrfs root. Then use the repository's Ansible playbook. Do not attempt the laptop install until the documented VM acceptance steps in [`../docs/superpowers/specs/2026-10-21-personal-arch-system-design.md`](../docs/superpowers/specs/2026-10-21-personal-arch-system-design.md) have been completed and the laptop's hardware has been checked.
+
+After first boot, clone this repository to its long-term location and run
+[`provision.sh`](provision.sh) as the regular desktop account. It audits boot
+and applies the repeatable Ansible roles after showing an interactive summary.
+The four manually reviewed third-party applications still follow their separate
+procedure in [`manual-apps/README.md`](manual-apps/README.md).
+
+The provisioner then asks which launcher to configure. Fuzzel is the default
+and is installed from Arch's signed repositories. Walker is optional: first
+follow [`manual-apps/walker/README.md`](manual-apps/walker/README.md) to review,
+build, inspect, and explicitly install the pinned Walker/Elephant packages as
+your regular user, then choose Walker. Provisioning checks that prerequisite;
+it does not build or install AUR recipes. Both choices route Super+Space,
+Super+Escape, the Hexen menu, and the clipboard picker through the selected
+launcher. Re-running provisioning lets you choose again; an older backend's
+config link can remain on disk but is not used by the selected dispatcher.
+If Walker's user service is already running, it remains until logout; the
+provisioner does not terminate processes in the active desktop session.
+
+Follow the [recovery guide](../docs/recovery.md) for checkpoint and offline
+recovery procedures, including their current validation status.
+
+## Laptop readiness gates
+
+The laptop is not ready to wipe yet. Before replacing its current OS:
+
+- Complete VM update/reboot, root snapshot recovery, and repeatable provisioning.
+- Install and verify the selected applications, Hyprland configuration, and
+  the owner's Neovim configuration; test Zoom audio/video, whole-desktop
+  sharing, and OBS recording with the actual Bluetooth headset and camera.
+- Keep independent copies of required keys and documents, and verify access.
+- Identify the laptop's GPU, Wi-Fi, storage controller, firmware, and UEFI needs;
+  the VM does not validate those devices or suspend behavior.
+- Confirm hardware virtualization is enabled and size VM memory/storage for the
+  Windows lab. Keep its guests on a dedicated libvirt network, not a physical
+  LAN bridge; see [virtualization guidance](../docs/virtualization.md).
+- Verify official installation media boots on the laptop and that network
+  access works before selecting any disk for installation.
+- Confirm the disk identity and that the encryption passphrase is available
+  independently of the system being replaced.
 
 ## References
 

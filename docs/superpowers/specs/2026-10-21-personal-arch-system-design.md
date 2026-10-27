@@ -8,10 +8,10 @@ Build a transparent, repeatable Arch Linux setup that can be learned and validat
 
 - The work laptop may be fully wiped and replaced; the user will separately preserve needed keys and documents.
 - Full disk encryption is mandatory.
-- The first target is an Arch VM built from the Arch Linux QCOW image; the work laptop is the next target.
+- The first target is a disposable UEFI VM installed from the official Arch ISO onto a blank QCOW2 disk; the work laptop is the next target.
 - Limine is preferred over GRUB.
 - Hyprland is preferred, including selected familiar keybindings, with a user-built theme rather than Omarchy's theming platform.
-- Preferred applications: Zen Browser, Neovim with LazyVim, Lazygit, Obsidian, 1Password, Zoom, and Slack.
+- Preferred applications: Zen Browser, Neovim with the owner's configuration, Lazygit, Obsidian, 1Password, Zoom, and Slack. LazyVim is not a required dependency.
 - The setup should favor explicit, readable configuration and make package sources visible.
 - The user prefers shutting down rather than hibernating. Initial setup should use zram and omit hibernation; encrypted hibernation can be considered later if needed.
 - The user does not need an application/data migration guide. They do need to preserve selected documents and keys before wiping the laptop.
@@ -20,7 +20,7 @@ Build a transparent, repeatable Arch Linux setup that can be learned and validat
 
 ### Installation and provisioning
 
-Use Archinstall for the base installation, keeping its non-secret configuration in the repository and the install process documented. Encryption passphrases, recovery keys, credentials, and other secrets must never be stored in the repository. The base installation creates a UEFI system with a LUKS2-encrypted system volume and Btrfs inside the encrypted volume. Limine is installed and configured through documented steps after the base installation where Archinstall does not provide the required boot setup. The exact Archinstall configuration format and the supported Limine kernel-update mechanism must be confirmed against current upstream documentation before implementation.
+Use Archinstall for the base installation, keeping its non-secret configuration in the repository and the install process documented. Encryption passphrases, recovery keys, credentials, and other secrets must never be stored in the repository. The base installation creates a UEFI system with a LUKS2-encrypted system volume and Btrfs inside the encrypted volume. The verified Archinstall 4.5 path installs Limine, its static encrypted-root entry, and its EFI package-update hook. Archinstall owns those files; Ansible audits them before provisioning. Manual fallback instructions remain separate and unvalidated. Kernel/initramfs and EFI deployment are checked in the VM; an actual newer-kernel update/reboot remains an acceptance gate.
 
 After first boot, use a readable Ansible playbook to install packages, configure services, and place system configuration. Ansible runs must be repeatable and should not repartition, format, or otherwise modify disk layout. Keep user-facing desktop configuration in plain files in the repository, separated from system provisioning so each is understandable on its own.
 
@@ -45,10 +45,10 @@ The goal is repeatable desired configuration across machines, not bit-for-bit re
 
 ### Desktop and applications
 
-- Configure Hyprland and only the workflow/keybindings selected by the user; do not import Omarchy's theme platform or a broad unreviewed configuration bundle.
+- Follow Omarchy's core default keybindings closely, as selected by the owner, in an editable repository-owned binding file. Translate required helpers explicitly and document omissions; do not import Omarchy's theme platform or an unreviewed configuration bundle.
 - Build the theme from repository-owned configuration files.
 - Declare each application and installation source. Prefer official Arch repositories. Use vendor repositories or AUR only when required, with the source and update behavior documented. AUR build instructions must be inspectable before use; do not pipe remote scripts directly into a shell.
-- Include the user's requested applications: Zen Browser, Neovim/LazyVim, Lazygit, Obsidian, 1Password, Zoom, and Slack.
+- Include the user's requested applications: Zen Browser, Neovim with the owner's configuration, Lazygit, Obsidian, 1Password, Zoom, and Slack.
 - Confirm each app's current official or community package channel during implementation, since distribution methods can change.
 
 ### VM-first acceptance path

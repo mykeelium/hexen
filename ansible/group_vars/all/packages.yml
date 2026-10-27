@@ -7,12 +7,10 @@ base_packages:
   - man-db
   - man-pages
   - networkmanager
+  - openvpn
   - snapper
   - sudo
   - zram-generator
 
 base_services:
   - NetworkManager.service
-
-boot_packages:
-  - limine

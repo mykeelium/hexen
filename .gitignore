@@ -1,0 +1,8 @@
+# Machine-local VM access and agent working files; never part of an install.
+/.local/
+
+# Optional per-machine compositor overrides.
+/config/hypr/local.lua
+
+# Python test bytecode.
+/tests/__pycache__/

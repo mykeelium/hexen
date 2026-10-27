@@ -1,0 +1,28 @@
+{
+  "reviewed_on": "2026-10-26",
+  "architecture": ["x86_64", "aarch64"],
+  "source_policy": "The AUR commits pin community-maintained packaging recipes. Source archives are versioned releases from the upstream GitHub repositories and are verified by the recorded SHA-256 checksums.",
+  "upstream_sources": {
+    "walker": {
+      "repository": "https://github.com/abenz1267/walker",
+      "version": "2.17.2",
+      "archive": "https://github.com/abenz1267/walker/archive/refs/tags/v2.17.2.tar.gz",
+      "sha256": "e50c606040b24f2a6045292f5f6a08c8a05ac599878ac781b1a5fcf50d353a56"
+    },
+    "elephant": {
+      "repository": "https://github.com/abenz1267/elephant",
+      "version": "2.22.1",
+      "archive": "https://github.com/abenz1267/elephant/archive/refs/tags/v2.22.1.tar.gz",
+      "sha256": "3d1d0d4c55ae531fa3f06406b96504b5165a0d7b53523d1f8351d9d93e457f44"
+    }
+  },
+  "recipes": [
+    {"package": "walker", "aur": "https://aur.archlinux.org/walker.git", "commit": "a801f3cc3be208a8cd188b2072087af1a413aecf", "source": "walker"},
+    {"package": "elephant", "aur": "https://aur.archlinux.org/elephant.git", "commit": "fa4ae49703d0f1a2b47d3a93f0a373fb404aff39", "source": "elephant"},
+    {"package": "elephant-desktopapplications", "aur": "https://aur.archlinux.org/elephant-desktopapplications.git", "commit": "fec5937952dc3f320cef9741b401478aa26e5a57", "source": "elephant"},
+    {"package": "elephant-files", "aur": "https://aur.archlinux.org/elephant-files.git", "commit": "2088f75f6ff637c339c55ec01a1bbd36ae6b8ffa", "source": "elephant", "official_runtime_dependency": "fd"},
+    {"package": "elephant-runner", "aur": "https://aur.archlinux.org/elephant-runner.git", "commit": "01254600069cdadc8317af9416f50e3b68b7b76e", "source": "elephant"},
+    {"package": "elephant-calc", "aur": "https://aur.archlinux.org/elephant-calc.git", "commit": "5c2979c6790aeb19c686f19147e63e37b67c73ed", "source": "elephant", "official_runtime_dependency": "libqalculate"},
+    {"package": "elephant-providerlist", "aur": "https://aur.archlinux.org/elephant-providerlist.git", "commit": "96ce4305a7b8a217f348890fc66410af7cedec02", "source": "elephant"}
+  ]
+}

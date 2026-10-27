@@ -1,0 +1,10 @@
+[Unit]
+Description=Hexen Elephant data provider
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/elephant
+Restart=on-failure
+RestartSec=2s

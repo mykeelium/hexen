@@ -1,0 +1,5 @@
+---
+- name: Install reviewed applications from the official Arch repositories
+  community.general.pacman:
+    name: '{{ apps_packages }}'
+    state: present

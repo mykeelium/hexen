@@ -1,0 +1,158 @@
+---
+- name: Require the supported LocalSend AppImage architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts["architecture"] == 'x86_64'
+    fail_msg: >-
+      The pinned LocalSend AppImage currently supports x86_64 only; detected
+      {{ ansible_facts["architecture"] }}. Add and review an upstream asset/hash for this
+      architecture before provisioning it.
+
+- name: Inspect LocalSend application parent directory
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/opt'
+    follow: false
+  register: _desktop_localsend_parent
+
+- name: Preserve unmanaged LocalSend application parent
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_localsend_parent.stat.exists and not (_desktop_localsend_parent.stat.islnk | default(false))) or
+        ((_desktop_localsend_parent.stat.isdir | default(false)) and
+         not (_desktop_localsend_parent.stat.islnk | default(false)) and
+         _desktop_localsend_parent.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Refusing to use {{ _desktop_home }}/.local/opt unless it is absent or a
+      real directory owned by {{ desktop_user }}.
+
+- name: Inspect the LocalSend desktop-entry parent directory
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/share'
+    follow: false
+  register: _desktop_localsend_share_parent
+
+- name: Preserve unmanaged LocalSend desktop-entry parent
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_localsend_share_parent.stat.exists and not (_desktop_localsend_share_parent.stat.islnk | default(false))) or
+        ((_desktop_localsend_share_parent.stat.isdir | default(false)) and
+         not (_desktop_localsend_share_parent.stat.islnk | default(false)) and
+         _desktop_localsend_share_parent.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Refusing to use {{ _desktop_home }}/.local/share unless it is absent or a
+      real directory owned by {{ desktop_user }}.
+
+- name: Inspect LocalSend application directory
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/opt/localsend'
+    follow: false
+  register: _desktop_localsend_dir
+
+- name: Preserve unmanaged LocalSend application directory
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_localsend_dir.stat.exists and not (_desktop_localsend_dir.stat.islnk | default(false))) or
+        ((_desktop_localsend_dir.stat.isdir | default(false)) and
+         not (_desktop_localsend_dir.stat.islnk | default(false)) and
+         _desktop_localsend_dir.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Refusing to write LocalSend into a non-directory, symlink, or directory not
+      owned by {{ desktop_user }}.
+
+- name: Inspect an existing LocalSend AppImage
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/opt/localsend/LocalSend.AppImage'
+    follow: false
+  register: _desktop_localsend_binary
+
+- name: Preserve an unmanaged LocalSend AppImage
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_localsend_binary.stat.exists and not (_desktop_localsend_binary.stat.islnk | default(false))) or
+        ((_desktop_localsend_binary.stat.isreg | default(false)) and
+         not (_desktop_localsend_binary.stat.islnk | default(false)) and
+         _desktop_localsend_binary.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Refusing to replace a LocalSend AppImage that is not a regular file owned
+      by {{ desktop_user }}.
+
+- name: Inspect the desktop applications directory
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/share/applications'
+    follow: false
+  register: _desktop_localsend_apps_dir
+
+- name: Preserve an unmanaged desktop applications directory
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_localsend_apps_dir.stat.exists and not (_desktop_localsend_apps_dir.stat.islnk | default(false))) or
+        ((_desktop_localsend_apps_dir.stat.isdir | default(false)) and
+         not (_desktop_localsend_apps_dir.stat.islnk | default(false)) and
+         _desktop_localsend_apps_dir.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Refusing to write the LocalSend menu entry into a non-directory, symlink,
+      or directory not owned by {{ desktop_user }}.
+
+- name: Inspect the LocalSend desktop entry
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/share/applications/localsend.desktop'
+    follow: false
+  register: _desktop_localsend_entry
+
+- name: Preserve an unmanaged LocalSend desktop entry
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_localsend_entry.stat.exists and not (_desktop_localsend_entry.stat.islnk | default(false))) or
+        ((_desktop_localsend_entry.stat.isreg | default(false)) and
+         not (_desktop_localsend_entry.stat.islnk | default(false)) and
+         _desktop_localsend_entry.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Refusing to replace a LocalSend desktop entry that is not a regular file
+      owned by {{ desktop_user }}.
+
+- name: Create LocalSend application directory
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/.local/opt/localsend'
+    state: directory
+    mode: '0755'
+  become: true
+  become_user: '{{ desktop_user }}'
+
+- name: Create user desktop applications directory
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/.local/share/applications'
+    state: directory
+    mode: '0755'
+  become: true
+  become_user: '{{ desktop_user }}'
+
+- name: Download the pinned official LocalSend AppImage
+  ansible.builtin.get_url:
+    url: '{{ desktop_localsend_url }}'
+    dest: '{{ _desktop_home }}/.local/opt/localsend/LocalSend.AppImage'
+    checksum: 'sha256:{{ desktop_localsend_sha256 }}'
+    mode: '0755'
+  become: true
+  become_user: '{{ desktop_user }}'
+
+- name: Create the LocalSend application menu entry
+  ansible.builtin.copy:
+    content: |
+      [Desktop Entry]
+      Name=LocalSend
+      Comment=Share files over the local network
+      Type=Application
+      Terminal=false
+      Categories=Network;Utility;
+      Icon=network-transmit-receive
+      Exec="{{ _desktop_home }}/.local/opt/localsend/LocalSend.AppImage"
+    dest: '{{ _desktop_home }}/.local/share/applications/localsend.desktop'
+    mode: '0644'
+  become: true
+  become_user: '{{ desktop_user }}'

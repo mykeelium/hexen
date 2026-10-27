@@ -1,0 +1,306 @@
+---
+- name: Validate the desktop target before making changes
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Install the reviewed desktop and editor dependencies
+  community.general.pacman:
+    name: '{{ desktop_packages + desktop_launcher_packages[desktop_launcher] }}'
+    state: present
+
+- name: Install LocalSend for the desktop user
+  ansible.builtin.import_tasks: localsend.yml
+
+- name: Enable desktop hardware services
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    enabled: true
+    state: started
+  loop: '{{ desktop_system_services }}'
+
+- name: Enable modular libvirt system sockets
+  ansible.builtin.systemd_service:
+    name: '{{ item }}'
+    enabled: true
+    state: started
+  loop: '{{ desktop_virtualization_sockets }}'
+
+- name: Manage libvirt's default NAT network when requested
+  when: desktop_libvirt_manage_default_network | bool
+  block:
+    - name: Check whether libvirt's default network is defined
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, net-info, default]
+      register: _desktop_libvirt_default_network
+      changed_when: false
+      failed_when: _desktop_libvirt_default_network.rc not in [0, 1]
+
+    - name: Check for the packaged default libvirt network definition
+      ansible.builtin.stat:
+        path: /etc/libvirt/qemu/networks/default.xml
+      register: _desktop_libvirt_default_network_file
+      when: _desktop_libvirt_default_network.rc != 0
+
+    - name: Require the packaged default network definition when none exists
+      ansible.builtin.assert:
+        that: _desktop_libvirt_default_network_file.stat.exists
+        fail_msg: >-
+          Libvirt has no default network and the package definition is missing.
+          Define the desired system network before provisioning; existing networks
+          are never replaced by this role.
+      when: _desktop_libvirt_default_network.rc != 0
+
+    - name: Define libvirt's packaged default network when needed
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, net-define, /etc/libvirt/qemu/networks/default.xml]
+      when: _desktop_libvirt_default_network.rc != 0
+      changed_when: true
+
+    - name: Read libvirt default network state
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, net-info, default]
+      register: _desktop_libvirt_default_network_state
+      changed_when: false
+
+    - name: Enable libvirt default network at boot
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, net-autostart, default]
+      when: >-
+        'Autostart: yes' not in
+        (_desktop_libvirt_default_network_state.stdout | regex_replace('\s+', ' '))
+      changed_when: true
+
+    - name: Start libvirt default network
+      ansible.builtin.command:
+        argv: [virsh, -c, qemu:///system, net-start, default]
+      when: >-
+        'Active: yes' not in
+        (_desktop_libvirt_default_network_state.stdout | regex_replace('\s+', ' '))
+      changed_when: true
+
+- name: Inspect the default libvirt storage directory
+  ansible.builtin.stat:
+    path: '{{ desktop_libvirt_default_pool_path }}'
+    follow: false
+  register: _desktop_libvirt_default_pool_directory
+
+- name: Require an existing default storage path to be a real directory
+  ansible.builtin.assert:
+    that:
+      - _desktop_libvirt_default_pool_directory.stat.isdir | default(false)
+      - not (_desktop_libvirt_default_pool_directory.stat.islnk | default(false))
+    fail_msg: >-
+      The configured libvirt storage path exists but is not a real directory:
+      {{ desktop_libvirt_default_pool_path }}. Review it before creating VM disks.
+  when: _desktop_libvirt_default_pool_directory.stat.exists
+
+- name: Create the default libvirt storage directory when missing
+  ansible.builtin.file:
+    path: '{{ desktop_libvirt_default_pool_path }}'
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: not _desktop_libvirt_default_pool_directory.stat.exists
+
+- name: Check whether libvirt's default storage pool is defined
+  ansible.builtin.command:
+    argv: [virsh, -c, qemu:///system, pool-info, default]
+  register: _desktop_libvirt_default_pool
+  changed_when: false
+  failed_when: _desktop_libvirt_default_pool.rc not in [0, 1]
+
+- name: Define the default libvirt directory pool when missing
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - pool-define-as
+      - default
+      - dir
+      - --target
+      - '{{ desktop_libvirt_default_pool_path }}'
+  when: _desktop_libvirt_default_pool.rc != 0
+  changed_when: true
+
+- name: Read the default libvirt storage pool state
+  ansible.builtin.command:
+    argv: [virsh, -c, qemu:///system, pool-info, default]
+  register: _desktop_libvirt_default_pool_state
+  changed_when: false
+
+- name: Read the default libvirt storage pool definition
+  ansible.builtin.command:
+    argv: [virsh, -c, qemu:///system, pool-dumpxml, default]
+  register: _desktop_libvirt_default_pool_definition
+  changed_when: false
+
+- name: Require the default pool to use the configured directory
+  ansible.builtin.assert:
+    that:
+      - "\"<pool type='dir'>\" in _desktop_libvirt_default_pool_definition.stdout"
+      - "('<path>' ~ desktop_libvirt_default_pool_path ~ '</path>') in _desktop_libvirt_default_pool_definition.stdout"
+    fail_msg: >-
+      An existing libvirt default pool uses a different backend or path. This role
+      preserves it; set desktop_libvirt_default_pool_path to the intended path or
+      reconcile the pool manually before provisioning.
+
+- name: Start the default libvirt storage pool
+  ansible.builtin.command:
+    argv: [virsh, -c, qemu:///system, pool-start, default]
+  when: >-
+    'State: running' not in
+    (_desktop_libvirt_default_pool_state.stdout | regex_replace('\s+', ' '))
+  changed_when: true
+
+- name: Enable the default libvirt storage pool at boot
+  ansible.builtin.command:
+    argv: [virsh, -c, qemu:///system, pool-autostart, default]
+  when: >-
+    'Autostart: yes' not in
+    (_desktop_libvirt_default_pool_state.stdout | regex_replace('\s+', ' '))
+  changed_when: true
+
+- name: Create desktop configuration parent directories
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/{{ item.item }}'
+    state: directory
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0755'
+  loop: '{{ _desktop_parents.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+  when: not item.stat.exists
+
+- name: Record the selected launcher for repo-owned helpers
+  ansible.builtin.copy:
+    content: '{{ desktop_launcher }}'
+    dest: '{{ _desktop_home }}/.config/hexen/launcher'
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0644'
+
+- name: Link repository-owned desktop and editor configuration
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/{{ item }}'
+    dest: '{{ _desktop_home }}/.config/{{ item }}'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+  loop: '{{ _desktop_config_dirs }}'
+
+- name: Initialize zoxide and rupa z for Bash
+  ansible.builtin.blockinfile:
+    path: '{{ _desktop_home }}/.bashrc'
+    create: true
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0644'
+    marker: '# {mark} HEXEN DIRECTORY JUMP TOOLS'
+    block: |
+      if command -v zoxide >/dev/null 2>&1; then
+        eval "$(zoxide init bash)"
+      fi
+      if command -v bat >/dev/null 2>&1; then
+        alias cat='bat --paging=never'
+      fi
+      if [[ -r /usr/share/z/z.sh ]]; then
+        _Z_CMD=j source /usr/share/z/z.sh
+        unset _Z_CMD
+      fi
+      lazydocker() {
+        local runtime_dir=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+        DOCKER_HOST="unix://${runtime_dir}/podman/podman.sock" command lazydocker "$@"
+      }
+
+- name: Configure Git to display diffs with delta
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.blockinfile:
+    path: '{{ _desktop_home }}/.gitconfig'
+    create: true
+    marker: '# {mark} HEXEN GIT DELTA'
+    block: |
+      [core]
+          pager = delta
+      [interactive]
+          diffFilter = delta --color-only
+      [delta]
+          navigate = true
+          side-by-side = true
+          line-numbers = true
+
+- name: Enable Podman's rootless API socket for the desktop user
+  ansible.builtin.file:
+    src: /usr/lib/systemd/user/podman.socket
+    dest: '{{ _desktop_home }}/.config/systemd/user/sockets.target.wants/podman.socket'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+
+- name: Create the Walker user service directory
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/.config/systemd/user'
+    state: directory
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0755'
+  when: desktop_launcher == 'walker'
+
+- name: Link the repo-owned Elephant user service
+  ansible.builtin.file:
+    src: '{{ desktop_walker_service_source }}'
+    dest: '{{ _desktop_home }}/.config/systemd/user/{{ desktop_walker_service_name }}'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+  when: desktop_launcher == 'walker'
+
+- name: Link the desktop helper
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/bin/hexen-desktop'
+    dest: '{{ _desktop_home }}/.local/bin/hexen-desktop'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+
+- name: Validate configuration without requiring an active graphical login
+  become: true
+  become_user: '{{ desktop_user }}'
+  when: not ansible_check_mode
+  block:
+    - name: Create a private runtime directory for the configuration parser
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: hexen-hypr-validate-
+      register: _desktop_validation_runtime
+      changed_when: false
+    - name: Verify the installed Hyprland configuration
+      ansible.builtin.command:
+        argv: [Hyprland, --verify-config, --config, '{{ _desktop_home }}/.config/hypr/hyprland.lua']
+      environment:
+        XDG_RUNTIME_DIR: '{{ _desktop_validation_runtime.path }}'
+      changed_when: false
+    - name: Verify the installed Ghostty configuration
+      ansible.builtin.command:
+        argv:
+          - ghostty
+          - +validate-config
+          - --config-file={{ _desktop_home }}/.config/ghostty/config.ghostty
+      changed_when: false
+  always:
+    - name: Remove the temporary parser runtime directory
+      ansible.builtin.file:
+        path: '{{ _desktop_validation_runtime.path }}'
+        state: absent
+      when: _desktop_validation_runtime.path is defined
+      changed_when: false

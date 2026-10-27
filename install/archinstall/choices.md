@@ -10,12 +10,17 @@ This is a human-readable record of the stable installation choices. Archinstall'
 | System volume | LUKS2 | Set an interactive passphrase; do not save it in the repo or an exported credentials file. |
 | Filesystem | Btrfs inside LUKS2 | Use root subvolume `@` and separate `/home` subvolume `@home`; do not place user files in a root snapshot. Record every mountpoint and subvolume shown in the summary. If Archinstall creates a separate `/.snapshots` mount, the base role deliberately stops until that layout is reconciled with Snapper. |
 | Bootloader | Limine | Current Archinstall docs list Limine as a supported UEFI bootloader. Select it only if the current ISO's final summary shows the encrypted-root configuration; otherwise choose no bootloader and follow [`../limine/README.md`](../limine/README.md). |
+| Unified kernel images | Disabled for the initial path | The current design references a regular kernel and initramfs on `/boot`. Select this explicitly rather than accepting an unknown installer default. |
+| Install to removable location | Disabled for the initial VM path | Use the custom Limine EFI location and a firmware NVRAM entry. Record the actual resulting path; the inspected 4.5 implementation uses `EFI/arch-limine/`. Hardware requiring the fallback location needs a separately recorded choice. |
+| Plymouth | Disabled initially | Keep the boot and passphrase prompt directly visible while validating the base install. |
+| Btrfs snapshot integration | Leave installer integration disabled | Let the base Ansible role initialize Snapper after the layout is verified. The inspected 4.5 default subvolume list contains `@`, `@home`, `@log`, and `@pkg`; see the [investigation record](observations-2026-10-25.md). |
 | Kernel | `linux` | Start with the standard kernel; add a second kernel only if it has a clear recovery purpose. |
 | Swap | zram, no disk swap | In the 2026.10.01 ISO VM walkthrough, Archinstall's Swap menu had zram enabled by default. Keep it enabled if the current ISO presents that default; never add a swap partition or file. Verify after boot. |
 | Network | NetworkManager | Configure for the target system; avoid copying the installer environment's Wi-Fi credentials into tracked files. |
 | User | Create a regular administrative user | Enter credentials interactively. Keep the root account disabled unless a specific recovery need is identified. |
 | Locale / timezone / keyboard | Choose for the machine owner | These values can be recorded here after the first VM install if they should be shared across machines. |
 | Additional packages | Minimal | Provision packages through the Ansible declarations after the base system boots. |
+| Profile | Minimal base, no desktop bundle | Provision the selected Hyprland environment and application set explicitly after validating base boot. |
 
 ## Checks before confirming installation
 

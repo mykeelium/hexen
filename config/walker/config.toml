@@ -1,0 +1,33 @@
+force_keyboard_focus = true
+selection_wrap = true
+hide_action_hints = true
+theme = "hexen"
+
+[placeholders]
+"default" = { input = "Search", list = "No results" }
+"desktopapplications" = { input = "Launch an app", list = "No applications found" }
+"files" = { input = "Browse files", list = "No files found" }
+"runner" = { input = "Run a command", list = "No commands found" }
+"calc" = { input = "Calculate", list = "No result" }
+"providerlist" = { input = "Choose a search", list = "No providers found" }
+
+[providers]
+default = ["desktopapplications"]
+empty = ["desktopapplications"]
+max_results = 50
+
+[[providers.prefixes]]
+prefix = "/"
+provider = "files"
+
+[[providers.prefixes]]
+prefix = ">"
+provider = "runner"
+
+[[providers.prefixes]]
+prefix = "="
+provider = "calc"
+
+[[providers.prefixes]]
+prefix = ";"
+provider = "providerlist"

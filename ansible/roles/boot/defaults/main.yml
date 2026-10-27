@@ -1,3 +1,4 @@
 ---
 boot_esp_mountpoint: /boot
 boot_root_subvolume: '@'
+boot_root_mapper: root
