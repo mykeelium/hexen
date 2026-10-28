@@ -108,6 +108,20 @@ a clear day-to-day workflow and explicit machine profiles.
   or templated secret handling. For the current Arch-only setup, adding it now
   would duplicate Ansible/Git responsibilities without solving a proven gap.
 
+## Priority 1: complete the desktop capture workflow
+
+Hexen currently binds Print to a `grim`/`slurp` region capture copied to the
+clipboard. The owner wants a more complete screenshot workflow inspired by
+[Omarchy's capture flow](https://omarchy.baris.sh/manual/screenshots-recording/).
+
+- [ ] **Design and implement a useful screenshot flow.** At minimum, decide and
+  support region, window, and full-display capture; save screenshots under
+  `~/Pictures` and copy them to the clipboard; and provide a clear annotation
+  path. Keep capture local and user initiated. Review Omarchy's capture menu,
+  recording, color picker, and OCR features, and include only the extra modes
+  that fit Hexen's needs. Document bindings, dependencies, save location, and
+  tested behavior in the desktop guide.
+
 ## Priority 1: add a safe, single update entry point
 
 Today, `pacman -Syu`, Git updates, Ansible provisioning, Neovim tools, and manual
