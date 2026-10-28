@@ -7,6 +7,9 @@
     name: '{{ desktop_packages + desktop_launcher_packages[desktop_launcher] }}'
     state: present
 
+- name: Install the pinned screensaver animation engine
+  ansible.builtin.import_tasks: screensaver.yml
+
 - name: Install LocalSend for the desktop user
   ansible.builtin.import_tasks: localsend.yml
 
@@ -293,6 +296,21 @@
         DOCKER_HOST="unix://${runtime_dir}/podman/podman.sock" command lazydocker "$@"
       }
 
+- name: Initialize Starship for interactive Bash sessions
+  ansible.builtin.blockinfile:
+    path: '{{ _desktop_home }}/.bashrc'
+    create: true
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0644'
+    marker: '# {mark} HEXEN STARSHIP PROMPT'
+    block: |
+      if [[ $- == *i* ]] && command -v starship >/dev/null 2>&1; then
+        if ! declare -F starship_precmd >/dev/null; then
+          eval "$(starship init bash)"
+        fi
+      fi
+
 - name: Configure Git to display diffs with delta
   become: true
   become_user: '{{ desktop_user }}'
@@ -360,6 +378,16 @@
     force: false
     follow: false
 
+- name: Link the screensaver helper
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/bin/hexen-screensaver'
+    dest: '{{ _desktop_home }}/.local/bin/hexen-screensaver'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+
 - name: Inspect active theme state
   ansible.builtin.stat:
     path: '{{ desktop_xdg_state_home | regex_replace("/+$", "") }}/hexen/themes/current'
@@ -400,6 +428,13 @@
           - ghostty
           - +validate-config
           - --config-file={{ _desktop_home }}/.config/ghostty/config.ghostty
+      changed_when: false
+    - name: Verify the isolated screensaver Ghostty configuration
+      ansible.builtin.command:
+        argv:
+          - ghostty
+          - +validate-config
+          - --config-file={{ desktop_repo_root }}/config/ghostty/screensaver.ghostty
       changed_when: false
   always:
     - name: Remove the temporary parser runtime directory

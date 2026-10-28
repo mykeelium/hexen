@@ -2,15 +2,26 @@
 base_packages:
   - base-devel
   - btrfs-progs
+  - firewalld
+  - fwupd
   - git
   - less
   - man-db
   - man-pages
   - networkmanager
   - openvpn
+  - pacman-contrib
+  - power-profiles-daemon
+  - restic
   - snapper
+  - smartmontools
   - sudo
   - zram-generator
 
 base_services:
+  - firewalld.service
   - NetworkManager.service
+  - power-profiles-daemon.service
+  - paccache.timer
+
+base_firewall_default_zone: drop

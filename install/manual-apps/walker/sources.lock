@@ -23,6 +23,7 @@
     {"package": "elephant-files", "aur": "https://aur.archlinux.org/elephant-files.git", "commit": "2088f75f6ff637c339c55ec01a1bbd36ae6b8ffa", "source": "elephant", "official_runtime_dependency": "fd"},
     {"package": "elephant-runner", "aur": "https://aur.archlinux.org/elephant-runner.git", "commit": "01254600069cdadc8317af9416f50e3b68b7b76e", "source": "elephant"},
     {"package": "elephant-calc", "aur": "https://aur.archlinux.org/elephant-calc.git", "commit": "5c2979c6790aeb19c686f19147e63e37b67c73ed", "source": "elephant", "official_runtime_dependency": "libqalculate"},
+    {"package": "elephant-websearch", "aur": "https://aur.archlinux.org/elephant-websearch.git", "commit": "8c76e2deaf63cd7800702a160bdffae5972a1842", "source": "elephant"},
     {"package": "elephant-providerlist", "aur": "https://aur.archlinux.org/elephant-providerlist.git", "commit": "96ce4305a7b8a217f348890fc66410af7cedec02", "source": "elephant"}
   ]
 }

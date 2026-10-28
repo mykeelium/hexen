@@ -1,0 +1,16 @@
+# Isolated from normal terminal themes, shaders and keybindings.
+font-family = "JetBrainsMono Nerd Font"
+font-size = 18
+background = 000000
+foreground = c0caf5
+background-opacity = 1
+window-padding-x = 0
+window-padding-y = 0
+window-decoration = false
+fullscreen = false
+# Controller places all windows before requesting fullscreen on each output.
+confirm-close-surface = false
+quit-after-last-window-closed = true
+keybind = clear
+cursor-opacity = 0
+mouse-hide-while-typing = true

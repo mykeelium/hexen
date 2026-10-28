@@ -66,15 +66,32 @@ case "${1:-}" in
     choice=$(printf '%s\n' "$entries" | pick_menu 'Clipboard: ') || exit 0
     [[ -n $choice ]] || exit 0
     printf '%s\n' "$choice" | cliphist decode | wl-copy ;;
+  monitors)
+    command -v hyprmon >/dev/null || missing Hyprmon
+    state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+    if [[ -r "$HOME/.config/hexen/state-home" ]]; then
+      IFS= read -r state_home < "$HOME/.config/hexen/state-home" || true
+    fi
+    [[ $state_home == /* ]] || { printf 'Hexen state directory must be absolute\n' >&2; exit 2; }
+    monitor_dir="$state_home/hexen/displays"
+    mkdir -p -- "$monitor_dir"
+    monitor_config="$monitor_dir/hyprland.lua"
+    if [[ ! -e $monitor_config && ! -L $monitor_config ]]; then
+      (set -o noclobber; printf '%s\n' '-- Machine-local Hyprmon target; Hexen loads the generated hyprmon.lua.' > "$monitor_config")
+    fi
+    exec ghostty -e env "HYPRLAND_CONFIG=$monitor_config" hyprmon ;;
+  screensaver) exec "$HOME/.local/bin/hexen-screensaver" start ;;
   screenshot)
     region=$(slurp) || exit 0
     grim -g "$region" - | wl-copy --type image/png
     notify-send 'Screenshot' 'Region copied to clipboard' ;;
   menu)
-    choice=$(printf '%s\n' 'Applications' 'Themes' 'Edit keybindings' 'Edit Hyprland appearance' 'System' | pick_menu 'Hexen: ') || exit 0
+    choice=$(printf '%s\n' 'Applications' 'Themes' 'Screensaver' 'Display settings' 'Edit keybindings' 'Edit Hyprland appearance' 'System' | pick_menu 'Hexen: ') || exit 0
     case "$choice" in
       Applications) exec "$0" launcher ;;
       Themes) exec "$HOME/.local/bin/hexen-theme" ;;
+      Screensaver) exec "$0" screensaver ;;
+      'Display settings') exec "$0" monitors ;;
       'Edit keybindings') exec ghostty nvim "$HOME/.config/hypr/bindings.lua" ;;
       'Edit Hyprland appearance') exec ghostty nvim "$HOME/.config/hypr/theme.lua" ;;
       System) exec "$0" system-menu ;;
@@ -94,5 +111,5 @@ case "${1:-}" in
       *Restart*) exec systemctl reboot ;;
       *'Shut down'*) exec systemctl poweroff ;;
     esac ;;
-  *) printf 'Usage: %s {launcher|start-session|browser|browser-private|passwords|clipboard|screenshot|menu|system-menu}\n' "$0" >&2; exit 2 ;;
+  *) printf 'Usage: %s {launcher|start-session|browser|browser-private|passwords|clipboard|screenshot|screensaver|monitors|menu|system-menu}\n' "$0" >&2; exit 2 ;;
 esac

@@ -24,8 +24,9 @@ authorization, network isolation, and GOAD resource notes.
 
 For editable shortcuts and desktop startup, see [desktop setup](docs/desktop.md).
 For the current stopping point and next actions, see [the resume note](docs/resume.md).
-For the ordered pre-install and long-term maintenance checklist, see the
-[workstation readiness roadmap](docs/operations-roadmap.md).
+For day-to-day firewall, cache, backup, and hardware maintenance procedures, see
+[maintenance](docs/maintenance.md). For the ordered pre-install and long-term
+checklist, see the [workstation readiness roadmap](docs/operations-roadmap.md).
 
 Start with the [VM development workflow](install/vm/README.md), then the
 [installation guide](install/README.md). The latest

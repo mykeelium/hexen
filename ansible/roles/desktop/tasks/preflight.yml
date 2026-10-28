@@ -505,3 +505,18 @@
         ((_desktop_theme_helper.stat.islnk | default(false)) and
          _desktop_theme_helper.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen-theme')
     fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen-theme helper.'
+
+- name: Inspect screensaver helper destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/bin/hexen-screensaver'
+    follow: false
+  register: _desktop_screensaver_helper
+
+- name: Preserve an existing unmanaged screensaver helper
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_screensaver_helper.stat.exists and not (_desktop_screensaver_helper.stat.islnk | default(false))) or
+        ((_desktop_screensaver_helper.stat.islnk | default(false)) and
+         _desktop_screensaver_helper.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen-screensaver')
+    fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen-screensaver helper.'

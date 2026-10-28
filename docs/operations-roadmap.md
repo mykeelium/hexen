@@ -75,9 +75,131 @@ These are the current blockers to wiping the work computer.
   third-party source notes before installation. Keep signed Arch packages as
   the default. Explicitly decide which manually installed applications are
   required on the work computer and who updates them.
+- [ ] **Complete application installation in the clean rehearsal VM.** Install
+  and launch Zen, 1Password, Zoom, Slack, and Hyprmon using their reviewed
+  procedures. Install matching Walker/Elephant/provider builds if Walker is the
+  selected launcher, and test app search, calculations, and Google fallback.
+  Verify normal/private browser shortcuts and required desktop entries. Evidence
+  from the older acceptance VM does not complete this clean-VM gate; account
+  sign-in remains an owner action.
+- [ ] **Converge the VM onto one reviewed source revision.** Reconcile the
+  VM-local lock-screen change with the development checkout, review the pending
+  desktop/Starship changes, and deploy a recorded Git checkpoint. Confirm the
+  installed launcher, helpers, configuration links, and theme outputs match it.
+  Reboot, test login and normal lock/unlock, launch the required applications,
+  check audio/capture, and require a zero-change provisioning rerun. Keep each
+  machine's deployment separate so VM provisioning cannot alter the host.
+- [ ] **Accept the maintenance and firewall baseline below.** Package presence
+  alone does not complete this gate: prove the configured services, firewall
+  behavior, snapshot retention, and backup restore workflow in the VM first.
 - [ ] **Capture a clean repository checkpoint.** Review `git status`, commit or
   intentionally retain the completed setup work, and make sure no credentials,
   local VM files, private wallpapers, or machine-specific secrets are tracked.
+
+## Priority 0: complete the requested maintenance packages
+
+The owner requested the following additions after the 2026-10-28 readiness
+audit. These are accepted scope, not suggestions awaiting another package
+selection. Implement them through the declared package/service configuration;
+leave each item unchecked until its configuration and acceptance checks pass.
+Physical-device acceptance remains deferred until the hardware phase.
+
+- [ ] **Accept `pacman-contrib` and its configuration/cache workflow.** The
+  package is declared for installation. The weekly `paccache.timer` is configured
+  to retain its default three versions per package; `pacdiff` remains a manual
+  review step for `.pacnew`/`.pacsave` files. Confirm timer behavior and cache
+  retention in the rehearsal VM before marking this accepted.
+- [ ] **Configure and accept independent `restic` backups.** The package is
+  declared for installation; no destination or credentials are assumed. Choose
+  an off-device destination, encrypted repository, schedule, exclusions,
+  retention, and failure reporting. Keep repository credentials outside Git and
+  make them recoverable independently of the machine. Define a consistent
+  backup method for VM disks; copying an actively changing image is not
+  sufficient acceptance. Restore representative files and a VM image into a
+  separate destination and verify permissions and usability. See the
+  [restore procedure](https://restic.readthedocs.io/en/stable/050_restore.html).
+- [ ] **Accept the initial `firewalld` baseline and complete the policy below.**
+  The package and service are declared, with a persistent and runtime `drop`
+  default zone so unknown NetworkManager profiles start untrusted. Verify
+  effective policy and conflicts in the rehearsal VM, then complete the
+  connection, LocalSend, libvirt, VPN, and external IPv4/IPv6 tests in the next
+  section.
+- [ ] **Accept `fwupd` for firmware maintenance.** The package is declared; no
+  firmware update is run automatically. Inspect supported devices and available
+  firmware on the physical machine. Document the update/recovery procedure;
+  firmware writes and associated reboots remain explicit owner actions rather
+  than part of routine unattended provisioning.
+- [ ] **Accept `smartmontools` for physical drive health.** The package is
+  declared. Verify supported drive health reporting on physical hardware, choose
+  useful monitoring/notification settings, and document how to inspect a warning.
+  A virtual disk cannot validate physical SMART data.
+- [ ] **Accept `power-profiles-daemon` for laptop power profiles.** Its package
+  and service are declared. Confirm supported profiles, AC/battery transitions,
+  thermals, suspend/resume, and desktop integration on the laptop. Reconcile any
+  existing power-management policy before hardware acceptance.
+- [ ] **Verify CPU-specific microcode and the hardware package profile.** Select
+  `intel-ucode` or `amd-ucode` as appropriate, verify its boot integration, and
+  record GPU/Wi-Fi firmware and driver requirements. Absence in a virtual guest
+  is not evidence that a physical machine can omit these checks.
+- [ ] **Accept snapshot cleanup and SSD maintenance policy.** Snapper is configured
+  for no automatic timeline creation; cleanup-managed disposable snapshots are
+  bounded by count and age, while update recovery checkpoints and matching `/boot`
+  archives are created without a cleanup tag and remain manual-retention pairs.
+  Verify cleanup in the rehearsal VM without removing the only known recovery
+  pair. `fstrim.timer` remains disabled until the physical LUKS/Btrfs layout and
+  discard/privacy tradeoff are reviewed.
+
+## Priority 0: implement and accept a robust workstation firewall
+
+The 2026-10-28 VM audit found nftables installed but no base-chain policy loaded.
+The required result is a persistent, tested workstation policy, with network
+exceptions documented by purpose and scope. VM acceptance comes first; the
+target laptop's network and hardware checks can follow later.
+
+- [ ] **Define the baseline and its ownership.** Manage repository-owned
+  firewalld zones/policies declaratively. Deny unsolicited inbound traffic on
+  untrusted networks for IPv4 and IPv6, allow established/related traffic and
+  ordinary outbound client use, and restrict forwarding to explicitly required
+  VM/container networks. Keep loopback and essential DHCP, DNS responses,
+  ICMP/ICMPv6, and IPv6 neighbor-discovery behavior functional. Inspect effective
+  service allowances rather than assuming a named default zone is sufficient;
+  inbound SSH and other remote-management services require an explicit need.
+- [ ] **Bind trust to NetworkManager connection profiles.** New or unknown
+  networks must use the untrusted policy. Assign trusted LAN exceptions only
+  to owner-selected connections; do not trust every private-address subnet.
+  Verify Ethernet/Wi-Fi changes, reconnects, renamed interfaces, and firewall
+  restarts. See [NetworkManager/firewalld zone assignment](https://firewalld.org/documentation/zone/connections-interfaces-and-sources.html).
+- [ ] **Scope LocalSend and discovery exceptions.** Record the actual discovery
+  and transfer requirements, allow them on selected trusted networks, and test
+  transfers in both directions. Verify they remain unavailable through the
+  untrusted profile; avoid a broad all-ports or all-multicast exception.
+- [ ] **Preserve isolated virtualization networking.** Validate libvirt guest
+  DHCP/DNS, outbound NAT, and the Windows lab's required isolation. Scope host
+  service allowances to the virtual bridge and required services, keep guests
+  off the physical work LAN unless deliberately configured, and test rootless
+  Podman separately. Preserve libvirt-managed networking rules; do not flush
+  unrelated tables to apply the workstation policy. See [libvirt firewall integration](https://libvirt.org/firewall.html).
+- [ ] **Accept VPN behavior deliberately.** Test OpenVPN connection,
+  disconnection, reconnect, DNS, IPv4/IPv6 routes, and interaction with LAN/VM
+  exceptions. Define whether an optional VPN kill switch is needed and what it
+  protects; a normal workstation firewall is not proof of a kill switch or
+  leak-free VPN routing.
+- [ ] **Prove persistence and repeatability.** Enable the firewall for boot,
+  verify the policy is effective after reboot and reload, and reconcile runtime
+  versus permanent rules. A second provisioning run must make zero changes.
+  Missing service/policy, unexpected zone membership, or unintended listening
+  services must be visible in the readiness report.
+- [ ] **Test from another disposable machine.** Verify expected allowed and
+  blocked connections over both IPv4 and IPv6, including unsolicited inbound
+  traffic and VM forwarding. Also test browsing, package downloads, DNS/NTP,
+  LocalSend, VPN use, and required meeting/capture workflows. Record expected
+  results and observed results; a local connectivity test alone is insufficient.
+- [ ] **Document diagnostics and local-console recovery.** Provide commands to
+  inspect zones, effective rules, listeners, and rate-limited local drop logs.
+  Keep logs bounded and avoid recording payloads or uploading them automatically.
+  Back up the known-working policy and test restoring it from a local console.
+  A failed rule deployment must report failure and retain or restore the last
+  working policy rather than silently opening the firewall.
 
 ## Priority 1: make configuration changes easy to manage and distribute
 
@@ -233,8 +355,10 @@ build AUR packages or run unreviewed remote scripts.
 - [ ] **Add `hexen doctor`.** Read-only report for Arch release, repo revision
   and dirty state, profile, broken config links, package differences, active
   critical services, failed units, disk space, snapshots, boot artifacts,
-  network, and pending migrations. Support a privacy-reviewed report file; do
-  not upload logs automatically.
+  network, and pending migrations. Include missing manual applications and
+  launcher providers, source-versus-deployed revision drift, snapshot cleanup
+  status, firewall policy/zone state, backup freshness, and pending firmware
+  work. Support a privacy-reviewed report file; do not upload logs automatically.
 - [ ] **Create an off-device backup policy.** Snapshots protect against local
   rollback mistakes, not drive failure, theft, or accidental deletion. Define
   encrypted backup destinations and retention for home files, editor data,
@@ -260,7 +384,10 @@ build AUR packages or run unreviewed remote scripts.
 
 ## Suggested delivery order
 
-1. Complete the P0 VM, recovery, application, hardware, and backup gates.
+1. Complete the clean-VM applications, reviewed-revision deployment, requested
+   maintenance packages, firewall acceptance, snapshot retention, and backup
+   restore gates. Keep physical hardware acceptance deferred until that phase
+   is resumed; it still must pass before replacing the work computer's OS.
 2. Add common/numen/arcana profile selection and the Git-based config status/diff
    workflow.
 3. Build and exercise `hexen update --check`, then the logged, locked,

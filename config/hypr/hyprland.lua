@@ -7,6 +7,7 @@ local generated_theme_file = io.open(generated_theme, 'r')
 if generated_theme_file then generated_theme_file:close(); dofile(generated_theme) end
 require('bindings')
 hl.monitor({ output = '', mode = 'preferred', position = 'auto', scale = 'auto' })
+require('monitors')
 hl.config({
   input = { kb_layout = 'us', follow_mouse = 1, touchpad = { natural_scroll = true } },
   general = { layout = 'dwindle' },

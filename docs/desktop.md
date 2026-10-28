@@ -299,3 +299,55 @@ The metadata test temporarily makes `.config` private and restores its original
 mode; it also creates and removes an isolated locked test account. Use the
 `test_desktop_user` argument, not `desktop_user`, so refusal cases can override
 the fixture account without Ansible extra-variable precedence masking them.
+
+The [HEXEN screensaver guide](screensaver.md) covers idle animation, manual
+preview, artwork customization, and its separate authentication policy.
+
+## Display settings and Walker searches
+
+Open **Super+Alt+Space → Display settings** for Hyprmon's monitor arrangement
+screen. [Install its pinned Lua-capable build](../install/manual-apps/hyprmon/)
+first. Saved layouts are machine state and do not rewrite the shared config.
+
+When Walker is selected, open it with **Super+Space**:
+
+| Type | Result |
+| --- | --- |
+| `2+2` | Calculator result alongside application matching |
+| `=2+2` | Calculator only |
+| `a phrase with no matching app` | Google search fallback |
+| `@your search phrase` | Explicit web search, even when an app matches |
+
+The calculator is Elephant's `calc` provider. The added `websearch` provider
+uses Google and is hidden when app/calculator results exist. Opening the search
+requires selecting it and pressing Enter. Typing a phrase alone does not open
+a browser or submit the phrase to Google. Web-search history is disabled.
+
+Install the matching `elephant-websearch` package using the updated
+[Walker build instructions](../install/manual-apps/walker/) before selecting
+Walker in provisioning. Providers must match the pinned Elephant build; adding
+an arbitrary newer plugin can cause a Go plugin version mismatch. These Walker
+provider settings do not change the Fuzzel launcher.
+
+## Terminal prompt
+
+The install includes Arch's `starship` package and links `config/starship.toml`
+to `~/.config/starship.toml`. The prompt matches the current cyan configuration:
+current directory, Git branch/status, and ❯ after success or ✗ after failure.
+The desktop role adds a marked Starship initialization block to `.bashrc`,
+preserving other shell configuration. Open a new Bash terminal after provisioning.
+Repeated sourcing does not register Starship twice; nested interactive shells
+initialize their own prompt. Non-interactive Bash sessions do not initialize it.
+
+An existing unmanaged Starship configuration is preserved: desktop preflight
+refuses to replace it. Move it aside yourself after reviewing it if you want to
+adopt the repository version. Font glyphs use the already installed Nerd Font.
+
+## Lock screen
+
+Press **Super+Ctrl+L** (or choose Lock in the system menu) to lock the session.
+Hyprlock shows the HEXEN wordmark, clock, account name and an explicit locked
+status. The password field remains visible before typing. Enter your password
+and press Enter to unlock; an unsuccessful attempt displays an unlock-failure
+message. Colors follow the active Hexen theme. This is a visual update only:
+PAM authentication and the idle/suspend locking policy remain unchanged.

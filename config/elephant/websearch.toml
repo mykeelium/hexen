@@ -1,0 +1,10 @@
+# Offer Google only when app/calculator providers have no matching result.
+# @ forces web search even when another provider has a match.
+always_show_default = false
+history = false
+engines_as_actions = false
+
+[[entries]]
+name = "Google"
+url = "https://www.google.com/search?q=%TERM%"
+default = true

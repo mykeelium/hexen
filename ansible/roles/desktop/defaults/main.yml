@@ -3,7 +3,7 @@
 desktop_repo_root: '{{ playbook_dir | dirname }}'
 desktop_launcher: walker
 desktop_xdg_state_home: '{{ _desktop_home }}/.local/state'
-desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker]
+desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker, elephant, starship.toml]
 desktop_launcher_config_dirs:
   fuzzel: fuzzel
   walker: ''
@@ -22,6 +22,7 @@ desktop_walker_packages:
   - elephant-files
   - elephant-runner
   - elephant-calc
+  - elephant-websearch
   - elephant-providerlist
 desktop_walker_executables:
   - /usr/bin/walker
@@ -31,6 +32,7 @@ desktop_walker_provider_files:
   - /usr/lib/elephant/files.so
   - /usr/lib/elephant/runner.so
   - /usr/lib/elephant/calc.so
+  - /usr/lib/elephant/websearch.so
   - /usr/lib/elephant/providerlist.so
 desktop_packages:
   - hyprland
@@ -85,6 +87,7 @@ desktop_packages:
   - tokei
   - yazi
   - zellij
+  - starship
   - zoxide
   - z
   - ttf-jetbrains-mono-nerd

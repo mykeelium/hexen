@@ -1,0 +1,65 @@
+---
+- name: Inspect screensaver data destinations
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/{{ item }}'
+    follow: false
+  loop:
+    - .local/share
+    - .local/share/hexen
+    - .local/share/hexen/screensaver
+    - .local/share/hexen/screensaver/terminaltexteffects-0.15.0-py3-none-any.whl
+  register: _desktop_screensaver_paths
+
+- name: Preserve unmanaged screensaver data paths
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        (not (item.stat.islnk | default(false)) and
+         item.stat.uid == _desktop_uid | int and
+         ((item.stat.isreg | default(false)) if item.item.endswith('.whl') else (item.stat.isdir | default(false))))
+    fail_msg: 'Screensaver path must have the expected type and desktop-user ownership: {{ item.item }}'
+  loop: '{{ _desktop_screensaver_paths.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Create screensaver data directory
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/.local/share/hexen/screensaver'
+    state: directory
+    mode: '0755'
+
+- name: Download the checksum-pinned upstream TTE wheel
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.get_url:
+    url: https://files.pythonhosted.org/packages/ba/e8/89035cd56a3ef4fe1c2dbf790e1a2c78d4e922d3dbfc048e314e40c22b1a/terminaltexteffects-0.15.0-py3-none-any.whl
+    dest: '{{ _desktop_home }}/.local/share/hexen/screensaver/terminaltexteffects-0.15.0-py3-none-any.whl'
+    checksum: sha256:5503250dacae9a3c17e22b0010b2f5fa10332124019f485d517e0c9ebc51aa47
+    mode: '0644'
+
+- name: Prepare and verify TTE without network or system Python changes
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.command:
+    argv:
+      - uv
+      - tool
+      - run
+      - --offline
+      - --no-index
+      - --no-config
+      - --no-managed-python
+      - --no-python-downloads
+      - --python
+      - /usr/bin/python
+      - --from
+      - '{{ _desktop_home }}/.local/share/hexen/screensaver/terminaltexteffects-0.15.0-py3-none-any.whl'
+      - tte
+      - --version
+  environment:
+    HOME: '{{ _desktop_home }}'
+  changed_when: false
+  when: not ansible_check_mode

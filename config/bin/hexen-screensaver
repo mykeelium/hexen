@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Hexen's decorative screensaver; authentication remains Hyprlock's job."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import select
+import secrets
+import signal
+import socket
+import stat
+import subprocess
+import sys
+import termios
+import time
+import tty
+
+CONFIG = Path(__file__).resolve().parent.parent
+CLASS = 'io.github.hexen.screensaver'
+WHEEL = 'terminaltexteffects-0.15.0-py3-none-any.whl'
+
+
+def runtime_directory():
+    if not os.environ.get('XDG_RUNTIME_DIR'):
+        raise RuntimeError('Run this helper inside a graphical user session')
+    base = Path(os.environ['XDG_RUNTIME_DIR'])
+    info = base.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise RuntimeError('XDG_RUNTIME_DIR must be a private directory owned by this user')
+    instance = os.environ.get('HYPRLAND_INSTANCE_SIGNATURE', '')
+    directory = base / ('hexen-saver-' + hashlib.sha256(instance.encode()).hexdigest()[:12])
+    directory.mkdir(mode=0o700, exist_ok=True)
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise RuntimeError('Screensaver runtime directory is not private')
+    return directory
+
+
+def notify_stop(directory, message=b'stop'):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as client:
+        try:
+            client.sendto(message, str(directory / 'control'))
+        except (FileNotFoundError, ConnectionRefusedError):
+            pass
+
+
+def query(kind):
+    result = subprocess.run(['hyprctl', '-j', kind], check=True, capture_output=True,
+                            text=True, timeout=3)
+    return json.loads(result.stdout)
+
+
+def locked():
+    return subprocess.run(['pgrep', '-u', str(os.getuid()), '-x', 'hyprlock'],
+                          stdout=subprocess.DEVNULL, timeout=3).returncode == 0
+
+
+def terminate(children):
+    # Each Popen is a new process group owned by this invocation. Never pkill.
+    for child in children:
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    for child in children:
+        try:
+            child.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait(timeout=2)
+
+
+def tte_command():
+    wheel = Path.home() / '.local/share/hexen/screensaver' / WHEEL
+    if not wheel.is_file():
+        raise RuntimeError('Missing pinned TTE wheel; run Hexen desktop provisioning first')
+    return ['uv', 'tool', 'run', '--offline', '--no-index', '--no-config',
+            '--no-managed-python', '--no-python-downloads', '--python', '/usr/bin/python',
+            '--from', str(wheel), 'tte']
+
+
+def fullscreen_windows(children):
+    # Mapping another fullscreen window can unfullscreen the previous window.
+    # Place all windows first, then set fullscreen once on each destination.
+    for child in children:
+        expression = ('hl.dsp.window.fullscreen({window="pid:' + str(child.pid) +
+                      '",mode="fullscreen",action="set"})')
+        subprocess.run(['hyprctl', 'dispatch', expression], check=True,
+                       stdout=subprocess.DEVNULL, timeout=3)
+
+
+def start(directory, idle):
+    lock_fd = os.open(directory / 'lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, 'w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        if locked():
+            return
+        # Verify dependencies before creating any windows.
+        tte_command()
+        monitors = [m for m in query('monitors') if not m.get('disabled') and m.get('mirrorOf', 'none') == 'none']
+        if not monitors:
+            return
+        deadline = time.monotonic() + 150 if idle else None
+        token = secrets.token_hex(16).encode()
+        ready = directory / ('ready-' + token.decode())
+        children = []
+        done = False
+
+        def request_stop(*_):
+            nonlocal done
+            done = True
+
+        for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(signum, request_stop)
+        control = directory / 'control'
+        control.unlink(missing_ok=True)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as server:
+            server.bind(str(control))
+            pointer = query('cursorpos')
+
+            def activity():
+                if select.select([server], [], [], 0)[0]:
+                    message = server.recv(64)
+                    if message == b'failed:' + token:
+                        if idle and not locked():
+                            subprocess.run(['loginctl', 'lock-session'], check=True, timeout=5)
+                        return True
+                    if message in (b'stop', token):
+                        return True
+                return query('cursorpos') != pointer
+
+            try:
+                for monitor in monitors:
+                    if done: break
+                    if activity(): break
+                    child = subprocess.Popen([
+                        'ghostty', '--config-default-files=false',
+                        f'--config-file={CONFIG / "ghostty/screensaver.ghostty"}',
+                        '--gtk-single-instance=false', f'--class={CLASS}',
+                        '-e', str(Path(__file__).resolve()), '_render', '--token', token.decode()], start_new_session=True)
+                    children.append(child)
+                    # Wait until this window maps before placing the next one.
+                    until = time.monotonic() + 5
+                    while time.monotonic() < until and not done:
+                        if activity():
+                            done = True
+                            break
+                        if child.poll() is not None:
+                            raise RuntimeError('Screensaver terminal exited during startup')
+                        window = next((c for c in query('clients') if c.get('pid') == child.pid), None)
+                        if window is not None:
+                            if window.get('monitor') != monitor['id']:
+                                # Silent placement avoids focus dispatchers, which
+                                # warp the pointer and reset compositor idle timers.
+                                expression = ('hl.dsp.window.move({window="pid:' + str(child.pid) +
+                                    '",monitor=' + str(int(monitor['id'])) + ',follow=false})')
+                                subprocess.run(['hyprctl', 'dispatch', expression], check=True,
+                                               stdout=subprocess.DEVNULL, timeout=3)
+                            break
+                        time.sleep(.05)
+                    else:
+                        if not done: raise RuntimeError('Screensaver terminal did not map')
+                if activity(): done = True
+                if not done:
+                    fullscreen_windows(children)
+                    ready.touch(mode=0o600)
+                while children and not done:
+                    time.sleep(.2)
+                    if activity(): break
+                    if locked(): break
+                    if any(c.poll() is not None for c in children):
+                        if idle:
+                            subprocess.run(['loginctl', 'lock-session'], check=True, timeout=5)
+                        break
+                    if deadline is not None and time.monotonic() >= deadline:
+                        # Opening a terminal can reset an idle notification. Keep an
+                        # independent upper bound on the original five-minute lock.
+                        subprocess.run(['loginctl', 'lock-session'], check=True, timeout=5)
+                        break
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+                # A failed automatic launch may already have reset compositor
+                # idle. Lock early rather than extending the security deadline.
+                if idle and children and not done and not locked():
+                    subprocess.run(['loginctl', 'lock-session'], check=True, timeout=5)
+                raise
+            finally:
+                terminate(children)
+                ready.unlink(missing_ok=True)
+                control.unlink(missing_ok=True)
+
+
+def render(directory, token):
+    if not sys.stdin.isatty():
+        raise RuntimeError('The renderer needs a terminal')
+    attributes = termios.tcgetattr(sys.stdin)
+    child = None
+    done = False
+    activity_detected = False
+
+    def request_stop(*_):
+        nonlocal done
+        done = True
+
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(signum, request_stop)
+    try:
+        # Cbreak consumes keys immediately without disabling TTE newline output.
+        tty.setcbreak(sys.stdin.fileno())
+        input_mode = termios.tcgetattr(sys.stdin)
+        input_mode[3] &= ~termios.ISIG
+        termios.tcsetattr(sys.stdin, termios.TCSANOW, input_mode)
+        print('\033[?25l\033[?1003h\033[?1006h', end='', flush=True)
+        while not done:
+            if (directory / ('ready-' + token)).exists() and (child is None or child.poll() is not None):
+                if child is not None and child.returncode != 0:
+                    raise RuntimeError('TTE exited unsuccessfully')
+                command = tte_command() + ['-i', str(CONFIG / 'branding/screensaver.txt'),
+                    '--frame-rate', '60', '--canvas-width', '0', '--canvas-height', '0',
+                    '--reuse-canvas', '--anchor-canvas', 'c', '--anchor-text', 'c',
+                    '--random-effect', '--no-eol', '--no-restore-cursor']
+                child = subprocess.Popen(command, stdin=subprocess.DEVNULL, start_new_session=True)
+            if select.select([sys.stdin], [], [], .1)[0]:
+                os.read(sys.stdin.fileno(), 64)
+                activity_detected = True
+                done = True
+    finally:
+        if child is not None: terminate([child])
+        termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+        print('\033[?1003l\033[?1006l\033[?25h\033[0m', end='', flush=True)
+        notify_stop(directory, (b'' if activity_detected else b'failed:') + token.encode())
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['start', 'stop', 'idle-action', '_render'])
+    parser.add_argument('--idle', action='store_true', help='Preserve the five-minute idle lock deadline')
+    parser.add_argument('--token', default='', help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.action == '_render' and not args.token:
+        parser.error('The renderer must be launched by the controller')
+    if args.action == 'idle-action':
+        command = (['hyprctl', 'dispatch', 'hl.dsp.dpms({action="off"})'] if locked()
+                   else ['loginctl', 'lock-session'])
+        subprocess.run(command, check=True, timeout=5)
+        return
+    directory = runtime_directory()
+    if args.action == 'stop': notify_stop(directory)
+    elif args.action == '_render': render(directory, args.token)
+    else: start(directory, args.idle)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+        print(f'hexen-screensaver: {error}', file=sys.stderr)
+        sys.exit(1)

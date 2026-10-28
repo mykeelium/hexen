@@ -16,6 +16,37 @@ images, and Snapper's own snapshot store therefore require separate treatment.
 See the [Btrfs subvolume documentation](https://btrfs.readthedocs.io/en/latest/Subvolumes.html)
 and [Snapper manual](https://snapper.io/manpages/snapper.html).
 
+## Snapshot retention policy
+
+Hexen creates no automatic hourly timeline snapshots. The enabled
+`snapper-cleanup.timer` service only cleans snapshots that were explicitly
+created with a Snapper cleanup algorithm; it does not make the pre-update
+recovery procedure below disposable. The root policy retains up to 10 regular
+cleanup-managed snapshots and 5 cleanup-managed snapshots marked important,
+with a seven-day minimum age before removal.
+
+A pre-update checkpoint is a recovery pair: its Snapper root snapshot and the
+matching `/boot` archive, checksums, and package manifest must remain together.
+The procedure below deliberately creates a snapshot without a cleanup
+algorithm, so Snapper will not remove it automatically. Do not add
+`--cleanup-algorithm number` to that command. Review and remove an old recovery
+pair only as a deliberate maintenance action, after confirming that another
+known-good pair and an independent data backup exist. Snapper cleanup does not
+know about the separate `/boot` archive.
+
+For disposable, non-recovery checkpoints that are safe to prune, use the
+`number` cleanup algorithm explicitly; these are bounded by the count and age
+settings above:
+
+```sh
+sudo snapper -c root create --cleanup-algorithm number \
+  --description "disposable-checkpoint"
+```
+
+This local policy is not an off-device backup. The separate `restic` package is
+installed for future backup setup, but repository location, credentials,
+schedule, retention, and restore acceptance still need to be configured.
+
 ## Before an update
 
 Run inside the installed system. Choose a new destination on encrypted `/home`

@@ -4,12 +4,85 @@
     name: "{{ base_packages }}"
     state: present
 
+- name: Inspect competing firewall service activity
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ item }}"
+  loop:
+    - nftables.service
+    - ufw.service
+  register: base_firewall_competing_active
+  changed_when: false
+  failed_when: false
+
+- name: Inspect competing firewall service enablement
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - "{{ item }}"
+  loop:
+    - nftables.service
+    - ufw.service
+  register: base_firewall_competing_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Refuse to start firewalld alongside another firewall manager
+  ansible.builtin.assert:
+    that:
+      - >-
+        base_firewall_competing_active.results
+        | selectattr('stdout', 'equalto', 'active') | list | length == 0
+      - >-
+        base_firewall_competing_enabled.results
+        | selectattr('stdout', 'in', ['enabled', 'enabled-runtime'])
+        | list | length == 0
+    fail_msg: >-
+      Another firewall service (nftables.service or ufw.service) is active or
+      enabled. Review and reconcile its rules before enabling firewalld. No
+      firewall service was changed by this role.
+
+- name: Read persistent firewalld default zone before starting services
+  ansible.builtin.command:
+    argv:
+      - firewall-offline-cmd
+      - --get-default-zone
+  register: base_firewall_permanent_zone
+  changed_when: false
+
+- name: Set a fail-closed persistent firewalld default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-offline-cmd
+      - "--set-default-zone={{ base_firewall_default_zone }}"
+  when: base_firewall_permanent_zone.stdout != base_firewall_default_zone
+  changed_when: true
+
 - name: Enable required base services
   ansible.builtin.systemd_service:
     name: "{{ item }}"
     enabled: true
     state: started
   loop: "{{ base_services }}"
+
+- name: Read active firewalld default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - --get-default-zone
+  register: base_firewall_runtime_zone
+  changed_when: false
+
+- name: Set the active firewalld default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - "--set-default-zone={{ base_firewall_default_zone }}"
+  when: base_firewall_runtime_zone.stdout != base_firewall_default_zone
+  changed_when: true
 
 - name: Install zram generator configuration
   ansible.builtin.template:
@@ -146,3 +219,9 @@
     owner: root
     group: root
     mode: '0640'
+
+- name: Enable Snapper cleanup after installing the retention policy
+  ansible.builtin.systemd_service:
+    name: snapper-cleanup.timer
+    enabled: true
+    state: started

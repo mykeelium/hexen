@@ -9,10 +9,11 @@ theme = "hexen"
 "files" = { input = "Browse files", list = "No files found" }
 "runner" = { input = "Run a command", list = "No commands found" }
 "calc" = { input = "Calculate", list = "No result" }
+"websearch" = { input = "Search Google", list = "No search available" }
 "providerlist" = { input = "Choose a search", list = "No providers found" }
 
 [providers]
-default = ["desktopapplications"]
+default = ["desktopapplications", "calc", "websearch"]
 empty = ["desktopapplications"]
 max_results = 50
 
@@ -31,3 +32,7 @@ provider = "calc"
 [[providers.prefixes]]
 prefix = ";"
 provider = "providerlist"
+
+[[providers.prefixes]]
+prefix = "@"
+provider = "websearch"

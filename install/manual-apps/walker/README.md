@@ -1,7 +1,7 @@
 # Walker manual package setup
 
 Walker is an optional install-time launcher choice. It needs Walker, Elephant,
-and five Elephant providers before provisioning can select it. The exact recipe
+and six Elephant providers before provisioning can select it. The exact recipe
 commits and upstream source hashes are in [`sources.lock`](sources.lock).
 
 The recipes are community-maintained AUR `PKGBUILD`s; the recipes inspected here
@@ -49,6 +49,9 @@ git -C elephant-runner checkout 01254600069cdadc8317af9416f50e3b68b7b76e
 git clone https://aur.archlinux.org/elephant-calc.git
 git -C elephant-calc checkout 5c2979c6790aeb19c686f19147e63e37b67c73ed
 
+git clone https://aur.archlinux.org/elephant-websearch.git
+git -C elephant-websearch checkout 8c76e2deaf63cd7800702a160bdffae5972a1842
+
 git clone https://aur.archlinux.org/elephant-providerlist.git
 git -C elephant-providerlist checkout 96ce4305a7b8a217f348890fc66410af7cedec02
 ```
@@ -58,7 +61,7 @@ the source URLs and hashes match `sources.lock`, and inspect changes if the
 selected commits differ. Then verify and build each recipe as your normal user:
 
 ```sh
-for package in walker elephant elephant-desktopapplications elephant-files elephant-runner elephant-calc elephant-providerlist; do
+for package in walker elephant elephant-desktopapplications elephant-files elephant-runner elephant-calc elephant-websearch elephant-providerlist; do
   (
     cd "$package"
     git status --short
@@ -71,11 +74,15 @@ for package in walker elephant elephant-desktopapplications elephant-files eleph
 done
 ```
 
+When adding web search to an existing installation, rebuild Elephant and all
+its providers together with the same Go toolchain; matching release numbers
+alone do not guarantee Go plugin compatibility.
+
 Before installation, inspect each generated archive's package metadata, file
 list, ownership, modes, and SHA-256. Confirm the providers install only their
 plugin under `/usr/lib/elephant/` and the expected license files; Walker also
 installs its binary and default theme/config assets. The reviewed recipes have
-no install scripts. Install only the seven exact archives produced by the
+no install scripts. Install only the eight exact archives produced by the
 builds, in one explicit transaction:
 
 ```sh
@@ -86,6 +93,7 @@ sudo pacman -U \
   ./elephant-files/elephant-files-2.22.1-1-ARCH.pkg.tar.zst \
   ./elephant-runner/elephant-runner-2.22.1-1-ARCH.pkg.tar.zst \
   ./elephant-calc/elephant-calc-2.22.1-1-ARCH.pkg.tar.zst \
+  ./elephant-websearch/elephant-websearch-2.22.1-1-ARCH.pkg.tar.zst \
   ./elephant-providerlist/elephant-providerlist-2.22.1-1-ARCH.pkg.tar.zst
 ```
 
