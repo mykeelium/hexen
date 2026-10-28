@@ -4,4 +4,6 @@ apps_packages:
   - neovim
   - lazygit
   - obsidian
+  # Choose OBS's JACK provider in the same transaction; the desktop uses PipeWire.
+  - pipewire-jack
   - obs-studio

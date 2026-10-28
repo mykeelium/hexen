@@ -11,6 +11,10 @@ class SystemMenuTest(unittest.TestCase):
         helper = Path(__file__).resolve().parents[1] / "config/bin/hexen-desktop"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            home = root / 'home'
+            launcher = home / '.config/hexen/launcher'
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text('fuzzel\n')
             fuzzel = root / "fuzzel"
             fuzzel.write_text('#!/bin/sh\n[ "$HEXEN_TEST_CHOICE" = CANCEL ] && exit 1\nprintf "%s\\n" "$HEXEN_TEST_CHOICE"\n')
             fuzzel.chmod(0o755)
@@ -21,7 +25,7 @@ class SystemMenuTest(unittest.TestCase):
             log = root / "actions"
             result = subprocess.run(
                 [str(helper), "system-menu"], capture_output=True, text=True,
-                env={**os.environ, "PATH": f"{root}:/usr/bin:/bin",
+                env={**os.environ, "HOME": str(home), "PATH": f"{root}:/usr/bin:/bin",
                      "HEXEN_TEST_CHOICE": choice, "HEXEN_TEST_ACTION_LOG": str(log)},
                 timeout=5,
             )

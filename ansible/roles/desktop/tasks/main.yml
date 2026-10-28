@@ -30,11 +30,19 @@
     force: false
     follow: false
 
-- name: Enable desktop hardware services
+- name: Inspect Bluetooth's service hardware condition
+  ansible.builtin.stat:
+    path: /sys/class/bluetooth
+    follow: true
+  register: _desktop_bluetooth_hardware
+
+- name: Enable desktop hardware services and start those with available hardware
   ansible.builtin.systemd_service:
     name: '{{ item }}'
     enabled: true
-    state: started
+    state: >-
+      {{ 'started' if item != 'bluetooth.service' or
+         (_desktop_bluetooth_hardware.stat.isdir | default(false)) else omit }}
   loop: '{{ desktop_system_services }}'
 
 - name: Enable modular libvirt system sockets

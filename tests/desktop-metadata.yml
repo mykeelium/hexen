@@ -4,7 +4,7 @@
   hosts: localhost
   connection: local
   become: true
-  gather_facts: false
+  gather_facts: true
   vars:
     desktop_user: '{{ test_desktop_user }}'
   tasks:

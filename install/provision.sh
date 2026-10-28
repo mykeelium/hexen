@@ -3,25 +3,26 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: install/provision.sh [--help]
+Usage: install/provision.sh [--vm] [--help]
 
 Provision this Arch Linux installation with the repository's system and desktop
 configuration. Run it as the account that should own the desktop configuration,
 not as root. It does not partition disks or run Archinstall.
+
+--vm leaves libvirt's default network unmanaged to avoid a nested NAT subnet
+collision. It still provisions the desktop, libvirt sockets, and storage pool.
 EOF
 }
 
-case "${1:-}" in
-  --help|-h)
-    usage
-    exit 0
-    ;;
-  "") ;;
-  *)
-    usage >&2
-    exit 2
-    ;;
-esac
+vm_mode=false
+while (( $# )); do
+  case "$1" in
+    --vm) vm_mode=true ;;
+    --help|-h) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+  shift
+done
 
 if (( EUID == 0 )); then
   printf 'Run this script as your regular desktop account, not root.\n' >&2
@@ -40,6 +41,10 @@ fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 desktop_user="$(id -un)"
+network_summary='It starts the standard libvirt NAT network and default VM storage pool.'
+if [[ $vm_mode == true ]]; then
+  network_summary='VM mode leaves libvirt networks unmanaged and configures the default VM storage pool.'
+fi
 
 if ! command -v ansible-playbook >/dev/null 2>&1 || ! command -v ansible-galaxy >/dev/null 2>&1; then
   cat >&2 <<'EOF'
@@ -61,7 +66,7 @@ It audits the existing boot setup, installs declared system and desktop packages
 enables configured services, creates root Snapper configuration, and links the
 repository's desktop and Neovim configuration into that user's home directory.
 This includes OpenVPN/NetworkManager support and a virt-manager QEMU/KVM host.
-It also starts the standard libvirt NAT network and default VM storage pool.
+${network_summary}
 Ansible will ask for sudo authorization when required.
 
 It does not partition disks, change encryption, or install the manually reviewed
@@ -116,14 +121,18 @@ EOF
 fi
 
 export ANSIBLE_CONFIG="${repo_root}/ansible/ansible.cfg"
+extra_vars=(-e "desktop_user=${desktop_user} desktop_launcher=${desktop_launcher}")
+if [[ $vm_mode == true ]]; then
+  extra_vars+=(-e desktop_libvirt_manage_default_network=false)
+fi
 
 ansible-galaxy collection install -r "${repo_root}/ansible/requirements.yml"
 ansible-playbook --syntax-check \
   -i "${repo_root}/ansible/inventory/localhost.yml" \
   "${repo_root}/ansible/playbook.yml" \
-  -e "desktop_user=${desktop_user} desktop_launcher=${desktop_launcher}"
+  "${extra_vars[@]}"
 ansible-playbook \
   -i "${repo_root}/ansible/inventory/localhost.yml" \
   "${repo_root}/ansible/playbook.yml" \
-  -e "desktop_user=${desktop_user} desktop_launcher=${desktop_launcher}" \
+  "${extra_vars[@]}" \
   --ask-become-pass

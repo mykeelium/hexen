@@ -93,6 +93,16 @@ overrides, invalid update actions, and alternate initramfs configuration.
 
 ## Optional desktop and owner editor
 
+Fresh OBS installation explicitly requests `pipewire-jack` in the same package
+transaction so Pacman does not choose `jack2` before desktop provisioning. An
+existing JACK installation still needs a reviewed migration; the playbook does
+not remove conflicting user packages automatically.
+
+Inside a guest whose uplink overlaps the default libvirt NAT subnet, use
+`install/provision.sh --vm`. The wrapper passes the documented network override
+to syntax checking and execution. Bluetooth service enablement is retained,
+while a start attempt is skipped when the unit's hardware directory is absent.
+
 Supply `-e desktop_user=YOUR_USER` to enable the desktop role after apps. See
 [desktop setup](../docs/desktop.md) for local-TTY startup, editable bindings,
 configuration protection, package details, and known differences from Omarchy.

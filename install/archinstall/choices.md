@@ -330,8 +330,12 @@ already exists, inspect it instead of overwriting it:
 git clone https://github.com/mykeelium/hexen.git "$HOME/hexen"
 cd "$HOME/hexen"
 git log -1 --oneline
-./install/provision.sh
+./install/provision.sh --vm
 ```
+
+The `--vm` flag leaves nested libvirt networks unmanaged to avoid a subnet
+collision with the VM uplink. Keep this flag on repeat runs of this rehearsal.
+Use the plain workstation command on the laptop once its hardware is accepted.
 
 Confirm this checkout is the reviewed revision intended for the rehearsal;
 uncommitted/unpushed host changes are not included in a GitHub clone. Record the

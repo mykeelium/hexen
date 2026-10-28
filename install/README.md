@@ -72,6 +72,14 @@ recovery procedures, including their current validation status.
 
 ## Laptop readiness gates
 
+For a rehearsal guest using libvirt's default NAT uplink, run
+`./install/provision.sh --vm` instead of the workstation invocation. This leaves
+nested libvirt networks unmanaged to avoid the uplink subnet collision, while
+still configuring virtualization sockets and storage. Choose Fuzzel unless the
+separately reviewed Walker packages are already installed. Bluetooth remains
+enabled for future hardware, but its service is started only when its kernel
+hardware directory exists. Keep the same mode and launcher on repeat runs.
+
 The laptop is not ready to wipe yet. Before replacing its current OS:
 
 - Complete VM update/reboot, root snapshot recovery, and repeatable provisioning.

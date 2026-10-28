@@ -14,6 +14,20 @@ The generic Omarchy starter example is intentionally not imported: it includes s
 
 ## Installation and updates
 
+The tracked `lazy-lock.json` is the reviewed source of plugin revisions. Startup
+applies those revisions as optional commit constraints to the active plugin
+specs and seeds a writable lockfile under `stdpath("state")/hexen/`. Incremental
+plugin installs therefore cannot discard pins for specs discovered in later
+rounds or rewrite the tracked lockfile. To update a plugin, review and change its
+tracked pin, then restart and restore; `:Lazy update` alone does not advance a
+reviewed commit constraint.
+
+After setup, run `python tests/run_editor_checks.py` from the repository root.
+It attaches an embedded UI, opens a temporary Lua buffer, and runs the pin,
+startup, parser/tool, and Go LSP/debugger assertions with a nonzero exit on
+failure. This requires the desktop's `python-pynvim` package. `--pins-only`
+checks bootstrap before the separate language-tool setup has completed.
+
 The desktop role links this directory to the selected user’s `~/.config/nvim`, refusing existing unmanaged configuration. Provisioning does not run plugin builds or language-tool downloads as root. Run as the target user with network access:
 
 ```sh
