@@ -1,0 +1,4 @@
+name = "Gruvbox Dark"
+mode = "dark"
+type = "scheme-tonal-spot"
+palette = "palette.json"

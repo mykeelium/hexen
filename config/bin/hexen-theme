@@ -1,0 +1,559 @@
+#!/usr/bin/env python3
+"""Validate, render, and activate repository-owned Hexen theme packs."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import secrets
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import tomllib
+import unicodedata
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1] / "themes"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+TEMPLATES = ROOT / "templates"
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+MODES = {"dark", "light"}
+SCHEMES = {
+    "scheme-content", "scheme-expressive", "scheme-fidelity", "scheme-fruit-salad",
+    "scheme-monochrome", "scheme-neutral", "scheme-rainbow", "scheme-tonal-spot",
+}
+FIT_MODES = {"cover", "contain", "fill", "tile"}
+TEMPLATE_NAMES = {
+    "hyprland.lua": "hyprland.lua",
+    "waybar.css": "waybar.css",
+    "ghostty.conf": "ghostty.conf",
+    "mako.conf": "mako.conf",
+    "fuzzel.ini": "fuzzel.ini",
+    "walker.css": "walker.css",
+    "hyprlock.conf": "hyprlock.conf",
+}
+
+
+class ThemeError(Exception):
+    pass
+
+
+def state_root() -> Path:
+    config_dir = Path.home() / ".config"
+    hexen_dir = config_dir / "hexen"
+    setting = hexen_dir / "state-home"
+    if config_dir.is_symlink() or (config_dir.exists() and not config_dir.is_dir()):
+        raise ThemeError(f"refusing to read state configuration through unsafe path: {config_dir}")
+    if hexen_dir.is_symlink() or (hexen_dir.exists() and not hexen_dir.is_dir()):
+        raise ThemeError(f"refusing to read state configuration through unsafe path: {hexen_dir}")
+    if setting.is_symlink() or (setting.exists() and not setting.is_file()):
+        raise ThemeError(f"refusing to read unsafe state directory setting: {setting}")
+    configured_home = setting.read_text(encoding="utf-8").strip() if setting.is_file() else os.environ.get(
+        "XDG_STATE_HOME", str(Path.home() / ".local/state"))
+    state_home = Path(configured_home).expanduser()
+    if not state_home.is_absolute():
+        raise ThemeError("XDG_STATE_HOME must be an absolute path")
+    if state_home.resolve(strict=False) != state_home:
+        raise ThemeError("XDG_STATE_HOME must not contain '..' or symlinked path components")
+    root = state_home / "hexen" / "themes"
+    if root.resolve(strict=False).is_relative_to(REPO_ROOT):
+        raise ThemeError("generated theme state cannot be stored inside the repository")
+    return root
+
+
+def available_packs() -> list[tuple[str, str]]:
+    if not ROOT.is_dir():
+        raise ThemeError(f"theme pack directory is missing: {ROOT}")
+    result = []
+    for path in sorted(ROOT.iterdir()):
+        if path.is_dir() and SLUG_RE.fullmatch(path.name) and (path / "theme.toml").is_file():
+            try:
+                result.append((path.name, read_manifest(path)["name"]))
+            except (ThemeError, OSError, RuntimeError):
+                continue
+    return result
+
+
+def read_manifest(pack: Path) -> dict:
+    manifest_path = pack / "theme.toml"
+    try:
+        data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ThemeError(f"cannot read {manifest_path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ThemeError(f"{manifest_path} must contain a TOML table")
+    unknown_fields = set(data) - {"name", "mode", "type", "wallpaper", "fit_mode", "palette"}
+    if unknown_fields:
+        raise ThemeError(f"unsupported manifest field(s): {', '.join(sorted(unknown_fields))}")
+    name = data.get("name")
+    mode = data.get("mode")
+    scheme = data.get("type")
+    if not isinstance(name, str) or not name.strip() or any(ord(char) < 32 for char in name):
+        raise ThemeError("manifest field 'name' must be a nonempty single-line string")
+    if not isinstance(mode, str) or mode not in MODES:
+        raise ThemeError("manifest field 'mode' must be 'dark' or 'light'")
+    if not isinstance(scheme, str) or scheme not in SCHEMES:
+        raise ThemeError("manifest field 'type' must be a Matugen scheme name")
+    wallpaper_value = data.get("wallpaper")
+    wallpaper = None
+    fit_mode = data.get("fit_mode", "cover")
+    if wallpaper_value is not None:
+        if not isinstance(wallpaper_value, str) or not wallpaper_value.strip():
+            raise ThemeError("manifest field 'wallpaper' must be a nonempty path")
+        candidate = Path(wallpaper_value).expanduser()
+        if candidate.is_absolute():
+            wallpaper = candidate.resolve(strict=True)
+        else:
+            wallpaper = (pack / candidate).resolve(strict=True)
+            if not wallpaper.is_relative_to(pack.resolve()):
+                raise ThemeError("relative wallpaper path must stay inside its theme pack")
+        if not wallpaper.is_file():
+            raise ThemeError(f"wallpaper is not a regular file: {wallpaper}")
+        if any(char in str(wallpaper) for char in (",", "\n", "\r", "#", "$", "\\", '"')):
+            raise ThemeError("wallpaper paths cannot contain commas, line breaks, or Hyprland config metacharacters (#, $, backslash, quote)")
+        if not isinstance(fit_mode, str) or fit_mode not in FIT_MODES:
+            raise ThemeError("manifest field 'fit_mode' must be cover, contain, fill, or tile")
+    elif "fit_mode" in data:
+        raise ThemeError("manifest field 'fit_mode' requires a wallpaper")
+    default_palette = None if wallpaper_value is not None else ("palette.json" if (pack / "palette.json").exists() else None)
+    palette_value = data.get("palette", default_palette)
+    palette = None
+    if palette_value is not None:
+        if not isinstance(palette_value, str) or not palette_value.strip():
+            raise ThemeError("manifest field 'palette' must be a relative JSON path")
+        relative = Path(palette_value)
+        if relative.is_absolute():
+            raise ThemeError("manifest field 'palette' must be a relative path inside the pack")
+        palette = (pack / relative).resolve(strict=True)
+        if not palette.is_relative_to(pack.resolve()) or not palette.is_file():
+            raise ThemeError("palette path must resolve to a regular file inside the theme pack")
+        try:
+            palette_data = json.loads(palette.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ThemeError(f"cannot parse palette JSON: {exc}") from exc
+        if not isinstance(palette_data, dict) or not isinstance(palette_data.get("colors"), dict):
+            raise ThemeError("palette JSON must contain a top-level 'colors' object")
+    if wallpaper is None and palette is None:
+        raise ThemeError("manifest must provide a wallpaper or curated palette")
+    return {"name": name.strip(), "mode": mode, "type": scheme, "wallpaper": wallpaper,
+            "fit_mode": fit_mode, "palette": palette}
+
+
+def toml_string(value: str | Path) -> str:
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def render(slug: str, pack: Path, manifest: dict, stage: Path) -> None:
+    matugen = shutil.which("matugen")
+    if not matugen:
+        raise ThemeError("matugen is not installed")
+    lines = ["[config.wallpaper]", "set = false", 'command = "true"', ""]
+    for key, template_name in TEMPLATE_NAMES.items():
+        output_name = key
+        if key == "ghostty.conf" and manifest["wallpaper"] is None:
+            template_name = "ghostty-curated.conf"
+        lines.extend((f"[templates.{toml_string(Path(output_name).stem)}]",
+                      f"input_path = {toml_string(TEMPLATES / template_name)}",
+                      f"output_path = {toml_string(stage / output_name)}", ""))
+    config_path = stage / "matugen.toml"
+    config_path.write_text("\n".join(lines), encoding="utf-8")
+    if manifest["wallpaper"] is not None:
+        command = [matugen, "image", str(manifest["wallpaper"]), "-m", manifest["mode"],
+                   "-t", manifest["type"], "--source-color-index", "0",
+                   "-c", str(config_path)]
+    else:
+        command = [matugen, "json", str(manifest["palette"]), "-c", str(config_path)]
+    try:
+        subprocess.run(command, check=True, cwd=pack, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "Matugen returned an error").strip()
+        raise ThemeError(f"Matugen could not render theme '{slug}': {detail}") from exc
+    if any(not (stage / name).is_file() for name in TEMPLATE_NAMES):
+        raise ThemeError("Matugen completed without producing all expected theme fragments")
+    wallpaper = manifest["wallpaper"]
+    hyprpaper = stage / "hyprpaper.conf"
+    if wallpaper is None:
+        hyprpaper.write_text("# Wallpaper-free theme.\n", encoding="utf-8")
+    else:
+        # Paths are validated against Hyprland config delimiters before any state is written.
+        path_text = str(wallpaper)
+        hyprpaper.write_text(
+            "# Generated by hexen-theme from validated pack metadata.\n"
+            "wallpaper {\n    monitor = *\n"
+            f"    path = {path_text}\n"
+            f"    fit_mode = {manifest['fit_mode']}\n"
+            "}\n", encoding="utf-8")
+    (stage / "slug").write_text(slug + "\n", encoding="utf-8")
+
+
+def active_slug(root: Path) -> str | None:
+    current = root / "current"
+    if not current.is_symlink():
+        if current.exists():
+            raise ThemeError("refusing to replace an unmanaged current theme path")
+        return None
+    try:
+        target = current.resolve(strict=True)
+    except OSError as exc:
+        raise ThemeError("active theme link is broken") from exc
+    if target.parent != root or not (target / "slug").is_file():
+        raise ThemeError("active theme link points outside Hexen's generated theme directory")
+    return (target / "slug").read_text(encoding="utf-8").strip()
+
+
+def prepare_include_links(root: Path) -> list[Path]:
+    """Create stable include links without writing through repository symlinks."""
+    home_config = Path.home() / ".config"
+    hexen_config = home_config / "hexen"
+    if home_config.is_symlink() or (home_config.exists() and not home_config.is_dir()):
+        raise ThemeError(f"refusing to use an unsafe config directory: {home_config}")
+    if not hexen_config.exists():
+        hexen_config.mkdir(mode=0o755, parents=True)
+    if hexen_config.is_symlink() or not hexen_config.is_dir():
+        raise ThemeError(f"refusing to use an unsafe Hexen config directory: {hexen_config}")
+    alias = hexen_config / "theme"
+    expected_alias = root / "current"
+    created: list[Path] = []
+    if alias.is_symlink():
+        if os.readlink(alias) != str(expected_alias):
+            raise ThemeError(f"refusing to replace an unmanaged theme link: {alias}")
+    elif alias.exists():
+        raise ThemeError(f"refusing to replace an unmanaged theme path: {alias}")
+    links = [
+        (Path.home() / ".config/waybar/hexen-theme.css", alias / "waybar.css"),
+        (Path.home() / ".config/walker/themes/hexen/hexen-theme.css", alias / "walker.css"),
+    ]
+    to_create: list[tuple[Path, Path]] = []
+    for link, target in links:
+        parent = link.parent
+        if not parent.exists():
+            continue
+        current = parent
+        while current != home_config:
+            if current.is_symlink() or not current.is_dir():
+                raise ThemeError(f"refusing to write a theme link through an unsafe config path: {current}")
+            current = current.parent
+        if link.is_symlink():
+            if os.readlink(link) != str(target):
+                raise ThemeError(f"refusing to replace an unmanaged theme link: {link}")
+            continue
+        if link.exists():
+            raise ThemeError(f"refusing to replace an unmanaged theme file: {link}")
+        to_create.append((link, target))
+    try:
+        if not alias.is_symlink():
+            alias.symlink_to(expected_alias)
+            created.append(alias)
+        for link, target in to_create:
+            link.symlink_to(target)
+            created.append(link)
+    except OSError:
+        for link in created:
+            link.unlink(missing_ok=True)
+        raise
+    return created
+
+
+def apply_theme(slug: str) -> None:
+    if not SLUG_RE.fullmatch(slug):
+        raise ThemeError("theme slug must contain lowercase letters, digits, and single hyphens")
+    pack = ROOT / slug
+    if pack.is_symlink() or not pack.is_dir() or not (pack / "theme.toml").is_file():
+        raise ThemeError(f"unknown theme pack: {slug}")
+    manifest = read_manifest(pack)
+    root = state_root()
+    if root.is_symlink() or root.parent.is_symlink():
+        raise ThemeError(f"refusing to use a symlinked generated themes path: {root}")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if root.is_symlink() or not root.is_dir():
+        raise ThemeError(f"refusing to use unsafe generated themes path: {root}")
+    root_info = root.stat()
+    if root_info.st_uid != os.getuid() or stat.S_IMODE(root_info.st_mode) & 0o077:
+        raise ThemeError(f"generated themes directory must be user-owned and private: {root}")
+    old_slug = active_slug(root)
+    old_target = (root / "current").resolve(strict=True) if old_slug is not None else None
+    stage = Path(tempfile.mkdtemp(prefix=f".{slug}-", dir=root))
+    os.chmod(stage, 0o700)
+    try:
+        render(slug, pack, manifest, stage)
+        new_links = prepare_include_links(root)
+        final = root / f"{slug}-{secrets.token_hex(8)}"
+        stage.rename(final)
+        temporary_link = root / f".current-{secrets.token_hex(8)}"
+        temporary_link.symlink_to(final.name)
+        os.replace(temporary_link, root / "current")
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            try:
+                apply_wallpaper_live(manifest)
+            except (OSError, ThemeError) as exc:
+                restore_link(root, old_target)
+                if old_target is None:
+                    for link in new_links:
+                        link.unlink(missing_ok=True)
+                raise ThemeError(f"theme rendered, but wallpaper activation failed: {exc}") from exc
+            refresh_desktop()
+        print(f"Applied {manifest['name']} ({slug})")
+    except Exception:
+        if stage.exists():
+            shutil.rmtree(stage)
+        raise
+
+
+def restore_link(root: Path, old_target: Path | None) -> None:
+    current = root / "current"
+    if old_target is None:
+        current.unlink(missing_ok=True)
+    else:
+        temp = root / f".restore-{secrets.token_hex(8)}"
+        temp.symlink_to(old_target.name)
+        os.replace(temp, current)
+
+
+def run_optional(command: list[str]) -> None:
+    if shutil.which(command[0]):
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+
+
+def apply_wallpaper_live(manifest: dict) -> None:
+    if manifest["wallpaper"] is None:
+        run_optional(["pkill", "-x", "hyprpaper"])
+        return
+    hyprctl = shutil.which("hyprctl")
+    hyprpaper = shutil.which("hyprpaper")
+    if not hyprctl or not hyprpaper:
+        raise ThemeError("hyprctl and hyprpaper are required to change a live wallpaper")
+    # Reload the generated wildcard config too: Hyprpaper keeps its startup `*`
+    # entry separate from the empty-monitor IPC fallback and does not replace it.
+    subprocess.run(["pkill", "-x", "hyprpaper"], stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, check=False)
+    time.sleep(0.1)
+    subprocess.Popen([hyprpaper], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+    active = subprocess.run([hyprctl, "hyprpaper", "listactive"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    for _ in range(30):
+        if active.returncode == 0:
+            break
+        time.sleep(0.1)
+        active = subprocess.run([hyprctl, "hyprpaper", "listactive"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    else:
+        run_optional(["pkill", "-x", "hyprpaper"])
+        raise ThemeError("Hyprpaper did not become ready")
+    outputs = subprocess.run([hyprctl, "monitors", "-j"], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, check=False)
+    if outputs.returncode != 0:
+        raise ThemeError(f"could not list Hyprland outputs: {(outputs.stderr or outputs.stdout).strip()}")
+    try:
+        monitor_names = [item["name"] for item in json.loads(outputs.stdout)]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ThemeError("Hyprland returned an invalid monitor list") from exc
+    if not monitor_names or any(not isinstance(name, str) or not name or "," in name for name in monitor_names):
+        raise ThemeError("Hyprland did not return valid monitor names")
+    for monitor_name in monitor_names:
+        result = subprocess.run([hyprctl, "hyprpaper", "wallpaper",
+                                 f"{monitor_name}, {manifest['wallpaper']}, {manifest['fit_mode']}"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+        if result.returncode != 0:
+            raise ThemeError(f"Hyprpaper could not set {monitor_name}: {(result.stderr or result.stdout).strip()}")
+    fallback = subprocess.run([hyprctl, "hyprpaper", "wallpaper",
+                               f", {manifest['wallpaper']}, {manifest['fit_mode']}"],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if fallback.returncode != 0:
+        raise ThemeError(f"Hyprpaper could not set the fallback wallpaper: {(fallback.stderr or fallback.stdout).strip()}")
+
+
+def refresh_desktop() -> None:
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return
+    for command in (["hyprctl", "reload"], ["pkill", "-SIGUSR2", "-x", "waybar"],
+                    ["makoctl", "reload"], ["pkill", "-x", "walker"]):
+        run_optional(command)
+    ghostty_reload = subprocess.run(
+        ["systemctl", "--user", "reload", "app-com.mitchellh.ghostty.service"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+    ) if shutil.which("systemctl") else None
+    if ghostty_reload is None or ghostty_reload.returncode != 0:
+        run_optional(["pkill", "-SIGUSR2", "-x", "ghostty"])
+    launcher = Path.home() / ".config/hexen/launcher"
+    if launcher.is_file() and launcher.read_text(encoding="utf-8").strip() == "walker":
+        helper = Path.home() / ".local/bin/hexen-desktop"
+        if helper.is_file() and os.access(helper, os.X_OK):
+            try:
+                subprocess.Popen([str(helper), "start-session"], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+            except OSError:
+                pass
+
+
+def select_theme() -> str | None:
+    config = Path.home() / ".config/hexen/launcher"
+    backend = config.read_text(encoding="utf-8").strip() if config.is_file() else "walker"
+    choices = available_packs()
+    if not choices:
+        raise ThemeError("no valid theme packs were found")
+    lines = [f"{slug} — {name}" for slug, name in choices]
+    if backend == "fuzzel":
+        command = ["fuzzel", "--dmenu", "--prompt=Theme: "]
+    elif backend == "walker":
+        command = ["walker", "--dmenu", "--placeholder=Choose a theme"]
+    else:
+        raise ThemeError(f"invalid launcher setting in {config}: expected fuzzel or walker")
+    if not shutil.which(command[0]):
+        raise ThemeError(f"selected launcher is not installed: {command[0]}")
+    try:
+        result = subprocess.run(command, input="\n".join(lines) + "\n", text=True,
+                                stdout=subprocess.PIPE, check=False)
+    except OSError as exc:
+        raise ThemeError(f"could not open theme selector: {exc}") from exc
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    selected_slug = result.stdout.strip().split(" — ", 1)[0]
+    if selected_slug not in {slug for slug, _ in choices}:
+        raise ThemeError("launcher returned an unknown theme selection")
+    return selected_slug
+
+
+def prompt_text(label: str, *, default: str | None = None) -> str:
+    suffix = f" [{default}]" if default else ""
+    while True:
+        value = input(f"{label}{suffix}: ").strip()
+        if not value and default is not None:
+            return default
+        if value:
+            return value
+        print("Please enter a value.")
+
+
+def prompt_choice(label: str, choices: list[str], *, default: str) -> str:
+    print(label)
+    for index, choice in enumerate(choices, start=1):
+        marker = " (default)" if choice == default else ""
+        print(f"  {index}. {choice}{marker}")
+    while True:
+        answer = input(f"Choose 1-{len(choices)} [{choices.index(default) + 1}]: ").strip()
+        if not answer:
+            return default
+        if answer.isdigit() and 1 <= int(answer) <= len(choices):
+            return choices[int(answer) - 1]
+        print("Choose one of the listed numbers.")
+
+
+def prompt_yes_no(label: str, *, default: bool = True) -> bool:
+    hint = "Y/n" if default else "y/N"
+    while True:
+        answer = input(f"{label} [{hint}]: ").strip().lower()
+        if not answer:
+            return default
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+        print("Enter y or n.")
+
+
+def theme_slug(name: str) -> str:
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
+    if not SLUG_RE.fullmatch(slug):
+        raise ThemeError("theme name must include at least one ASCII letter or number")
+    return slug
+
+
+def create_theme_interactive() -> None:
+    print("Create a wallpaper theme pack. The image will be copied into the repository.\n")
+    name = prompt_text("Theme name")
+    slug = theme_slug(name)
+    destination = ROOT / slug
+    if destination.exists() or destination.is_symlink():
+        raise ThemeError(f"theme pack already exists: {slug}; choose a different name")
+
+    raw_wallpaper = prompt_text("Path to wallpaper image").strip().strip("\"'")
+    source = Path(raw_wallpaper).expanduser().resolve(strict=True)
+    if not source.is_file():
+        raise ThemeError(f"wallpaper must be a regular file: {source}")
+
+    mode = prompt_choice("Color mode", ["dark", "light"], default="dark")
+    scheme = prompt_choice("Matugen color scheme", sorted(SCHEMES), default="scheme-tonal-spot")
+    fit_mode = prompt_choice("Wallpaper fit mode", sorted(FIT_MODES), default="cover")
+
+    ROOT.mkdir(parents=True, exist_ok=True)
+    staged_pack = Path(tempfile.mkdtemp(prefix=f".{slug}-", dir=ROOT))
+    try:
+        suffix = source.suffix.lower()
+        if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+            suffix = ""
+        wallpaper_name = f"wallpaper{suffix}"
+        shutil.copyfile(source, staged_pack / wallpaper_name)
+        (staged_pack / "theme.toml").write_text(
+            f"name = {json.dumps(name, ensure_ascii=False)}\n"
+            f"mode = {json.dumps(mode)}\n"
+            f"type = {json.dumps(scheme)}\n"
+            f"wallpaper = {json.dumps(wallpaper_name)}\n"
+            f"fit_mode = {json.dumps(fit_mode)}\n",
+            encoding="utf-8",
+        )
+
+        manifest = read_manifest(staged_pack)
+        with tempfile.TemporaryDirectory(prefix="hexen-theme-render-") as render_dir:
+            render(slug, staged_pack, manifest, Path(render_dir))
+        staged_pack.rename(destination)
+    except BaseException:
+        if staged_pack.exists():
+            shutil.rmtree(staged_pack)
+        raise
+
+    print(f"Created {name} at {destination}")
+    if prompt_yes_no("Apply this theme now?"):
+        try:
+            apply_theme(slug)
+        except (ThemeError, OSError, RuntimeError) as exc:
+            raise ThemeError(f"theme pack was created but could not be applied: {exc}") from exc
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="hexen-theme", description=__doc__)
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("list", help="list valid theme packs")
+    subparsers.add_parser("current", help="print the selected theme slug")
+    subparsers.add_parser("create", help="create a wallpaper-derived theme pack")
+    apply_parser = subparsers.add_parser("apply", help="validate, render, and apply a theme pack")
+    apply_parser.add_argument("slug")
+    args = parser.parse_args()
+    try:
+        if args.command == "list":
+            for slug, name in available_packs():
+                print(f"{slug}\t{name}")
+        elif args.command == "current":
+            selected = active_slug(state_root())
+            if selected is None:
+                print("No theme selected", file=sys.stderr)
+                return 1
+            print(selected)
+        elif args.command == "create":
+            create_theme_interactive()
+        elif args.command == "apply":
+            apply_theme(args.slug)
+        else:
+            selected = select_theme()
+            if selected:
+                apply_theme(selected)
+    except (ThemeError, OSError, RuntimeError, tomllib.TOMLDecodeError) as exc:
+        print(f"hexen-theme: {exc}", file=sys.stderr)
+        return 1
+    except (KeyboardInterrupt, EOFError):
+        print("hexen-theme: creation cancelled", file=sys.stderr)
+        return 130
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

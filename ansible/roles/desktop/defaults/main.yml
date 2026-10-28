@@ -2,10 +2,14 @@
 # Supply desktop_user explicitly; never guess that root is the desktop account.
 desktop_repo_root: '{{ playbook_dir | dirname }}'
 desktop_launcher: walker
-desktop_config_dirs: [hypr, waybar, ghostty, mako, xdg-desktop-portal, nvim, lazydocker]
+desktop_xdg_state_home: '{{ _desktop_home }}/.local/state'
+desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker]
 desktop_launcher_config_dirs:
   fuzzel: fuzzel
-  walker: walker
+  walker: ''
+desktop_split_config_files:
+  waybar: [config.jsonc, style.css]
+  walker: [config.toml, themes/hexen/style.css]
 desktop_launcher_packages:
   fuzzel: [fuzzel]
   walker: []
@@ -38,6 +42,8 @@ desktop_packages:
   - bluez
   - bluez-utils
   - bluetui
+  - matugen
+  - hyprpaper
   - pavucontrol
   - hyprlock
   - hypridle

@@ -178,7 +178,7 @@ prove the laptop's Bluetooth adapter, camera, microphone, or audio profiles.
 
 These tools and the requested CLI utilities are installed from Arch's signed
 official `extra` repository; see the [package source inventory](app-sources.md#requested-cli-utilities).
-The Ghostty config keeps the existing Tokyo Night palette. The Bash setup also
+The selected Tokyo Night pack supplies Ghostty's initial palette. The Bash setup also
 sets `cat` to `bat --paging=never` for interactive use.
 The desktop role adds a marked block to the target user's `.bashrc`; it does not
 replace the rest of that file.
@@ -212,10 +212,52 @@ the two `wl-paste --watch` startup lines to disable storage; `cliphist wipe`
 clears history. The idle policy locks at five minutes and blanks displays at ten;
 it does not suspend or hibernate. Manual lock uses the same lock daemon.
 
-Theme colors and gaps are in `hypr/theme.lua`; matching named/static palettes
-are in Waybar CSS, Ghostty, Mako, Fuzzel, and Hyprlock files. The palette follows the
-owner editor's existing Tokyo Night colors. No theme framework or wallpaper
-bundle is installed. Edit these files directly to develop the theme.
+## Named desktop themes
+
+The desktop role installs Matugen and Hyprpaper from Arch's signed `extra`
+repository. It initializes the `tokyo-night` pack on first provisioning.
+Run `hexen-theme create` for the guided wallpaper builder. It asks for a name,
+image path, dark/light mode, Matugen scheme, and wallpaper fit. It copies the
+wallpaper into a new pack under `config/themes/`, validates the image with
+Matugen, and offers to apply the new theme. This keeps the wallpaper with the
+repo so the pack is reproducible. Review and commit the new pack if you want it
+included in future installs. The **Create Theme** launcher opens this command
+in Ghostty. For manual curation, copy an existing theme pack and edit its
+`theme.toml` or `palette.json`.
+
+`hexen-theme list`, `hexen-theme current`, and `hexen-theme apply <slug>` are
+also available from a terminal. The Hexen menu includes **Themes**, and the
+desktop application list includes both **Themes** and **Create Theme**.
+
+Theme manifests support `name`, `mode` (`dark` or `light`), Matugen `type`, an
+optional `palette` JSON file, an optional `wallpaper`, and wallpaper `fit_mode`
+(`cover`, `contain`, `fill`, or `tile`). For a wallpaper, Matugen uses the
+manifest's mode and scheme to derive colors; otherwise it renders the curated
+palette exactly. Relative wallpaper
+paths must stay inside the theme pack. Absolute paths can reference a local
+image outside the repository. Theme packs never download or execute third-party
+hooks.
+
+Generated app fragments and the active theme link live in
+`${XDG_STATE_HOME:-~/.local/state}/hexen/themes`, outside the repository. The
+Ansible role defaults `desktop_xdg_state_home` to `~/.local/state`; override it
+when provisioning if you use a different state directory. The role persists
+the configured path in `~/.config/hexen/state-home`, which the theme helper
+uses ahead of `XDG_STATE_HOME` so graphical launches share the same state. The
+role also exports it in its managed Bash setup and passes it to initial theme
+selection. App configs load the active generation through the stable
+`~/.config/hexen/theme` link. The shared app layouts remain in this repository,
+while generated colors are included by Hyprland, Waybar, Ghostty, Mako,
+Fuzzel/Walker, Hyprlock, and Hyprpaper. Hyprpaper starts with Hyprland and restores the selected pack's
+wallpaper after login. Applying a theme reloads Hyprland, Waybar, and Mako,
+restarts Walker's `--gapplication-service` so it loads the new CSS and app
+catalog, and restarts Hyprpaper from the selected generated config. It asks
+Ghostty's systemd user service to reload and sends Ghostty's documented reload
+signal directly when that service is inactive. If rendering or live wallpaper
+activation fails, the previously active theme stays selected. Neovim keeps its
+independent colorscheme. See
+[`config/themes/README.md`](../config/themes/README.md) for pack creation and
+manifest details.
 
 ## Verification and remaining acceptance
 

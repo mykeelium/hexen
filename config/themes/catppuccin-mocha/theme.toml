@@ -1,0 +1,4 @@
+name = "Catppuccin Mocha"
+mode = "dark"
+type = "scheme-tonal-spot"
+palette = "palette.json"

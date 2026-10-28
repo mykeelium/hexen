@@ -1,11 +1,5 @@
 /* Repo-owned adaptation of Omarchy's compact Waybar layout. */
-@define-color background #1a1b26;
-@define-color foreground #c0caf5;
-@define-color accent #7aa2f7;
-@define-color muted #565f89;
-@define-color warning #e0af68;
-@define-color critical #f7768e;
-
+@import url("hexen-theme.css");
 * {
   background-color: @background;
   color: @foreground;
@@ -35,7 +29,7 @@ window#waybar { background: @background; color: @foreground; }
 }
 #workspaces button.empty { color: @muted; }
 #workspaces button.active { color: @accent; }
-#workspaces button:hover { color: @foreground; background: #24283b; }
+#workspaces button:hover { color: @foreground; background: @elevated; }
 
 #clock { margin: 0 8px; }
 #cpu, #network, #pulseaudio, #battery, #custom-hexen { min-width: 12px; }

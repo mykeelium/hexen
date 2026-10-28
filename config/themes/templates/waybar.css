@@ -1,0 +1,8 @@
+/* Generated from the active Hexen theme pack by Matugen. */
+@define-color background {{ colors.background.default.hex }};
+@define-color foreground {{ colors.on_background.default.hex }};
+@define-color accent {{ colors.primary.default.hex }};
+@define-color elevated {{ colors.surface_variant.default.hex }};
+@define-color muted {{ colors.on_surface_variant.default.hex }};
+@define-color warning {{ colors.tertiary.default.hex }};
+@define-color critical {{ colors.error.default.hex }};

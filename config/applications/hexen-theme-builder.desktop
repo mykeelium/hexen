@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Create Theme
+Comment=Build a wallpaper-based Hexen theme
+Type=Application
+Terminal=false
+Categories=Settings;DesktopSettings;
+Icon=preferences-desktop-wallpaper
+Keywords=theme;appearance;color;wallpaper;create;builder;
+Exec=/usr/bin/bash -lc "exec ghostty -e ~/.local/bin/hexen-theme create"

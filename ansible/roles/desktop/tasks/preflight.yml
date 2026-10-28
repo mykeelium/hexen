@@ -7,7 +7,9 @@
 
 - name: Resolve launcher-specific configuration directories
   ansible.builtin.set_fact:
-    _desktop_config_dirs: '{{ desktop_config_dirs + [desktop_launcher_config_dirs[desktop_launcher | default("walker")]] }}'
+    _desktop_config_dirs: >-
+      {{ desktop_config_dirs + ([desktop_launcher_config_dirs[desktop_launcher | default("walker")]]
+         if desktop_launcher_config_dirs[desktop_launcher | default("walker")] | length > 0 else []) }}
 
 - name: Require an explicit non-root desktop account
   ansible.builtin.assert:
@@ -72,6 +74,12 @@
       - _desktop_home not in ['/', '/root']
     fail_msg: 'Desktop preflight: expected a non-root account with its own home.'
 
+- name: Require an absolute desktop state directory
+  ansible.builtin.assert:
+    that:
+      - desktop_xdg_state_home.startswith('/')
+    fail_msg: 'Desktop preflight: desktop_xdg_state_home must be an absolute path.'
+
 - name: Inspect desktop configuration parents
   ansible.builtin.stat:
     path: '{{ _desktop_home }}/{{ item }}'
@@ -135,6 +143,128 @@
   loop_control:
     label: '{{ item.item }}'
 
+- name: Inspect dynamic CSS configuration directories
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/{{ item.key }}'
+    follow: false
+  loop: '{{ desktop_split_config_files | dict2items }}'
+  register: _desktop_split_config_directories
+
+- name: Preserve unmanaged dynamic CSS configuration directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.islnk | default(false)) and
+         item.stat.lnk_source == desktop_repo_root ~ '/config/' ~ item.item.key) or
+        ((item.stat.isdir | default(false)) and not (item.stat.islnk | default(false)) and
+         item.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Desktop preflight: {{ _desktop_home }}/.config/{{ item.item.key }} must be absent,
+      a real user-owned directory, or the existing Hexen repository link.
+  loop: '{{ _desktop_split_config_directories.results }}'
+  loop_control:
+    label: '{{ item.item.key }}'
+
+- name: Inspect Waybar files in a user-owned config directory
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/waybar/{{ item }}'
+    follow: false
+  loop: '{{ desktop_split_config_files.waybar }}'
+  register: _desktop_waybar_files
+  when: >-
+    not ((_desktop_split_config_directories.results | selectattr('item.key', 'equalto', 'waybar') | first).stat.islnk | default(false))
+
+- name: Preserve unmanaged Waybar files
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.islnk | default(false)) and
+         item.stat.lnk_source == desktop_repo_root ~ '/config/waybar/' ~ item.item)
+    fail_msg: 'Desktop preflight: refusing to replace unmanaged Waybar file {{ item.item }}.'
+  loop: "{{ _desktop_waybar_files.results | default([]) | selectattr('stat', 'defined') | list }}"
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Inspect the Waybar active-theme CSS link destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/waybar/hexen-theme.css'
+    follow: false
+  register: _desktop_waybar_theme_css
+  when: >-
+    not ((_desktop_split_config_directories.results | selectattr('item.key', 'equalto', 'waybar') | first).stat.islnk | default(false))
+
+- name: Preserve an unmanaged Waybar active-theme CSS file
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_waybar_theme_css.stat.exists and not (_desktop_waybar_theme_css.stat.islnk | default(false))) or
+        ((_desktop_waybar_theme_css.stat.islnk | default(false)) and
+         _desktop_waybar_theme_css.stat.lnk_target == _desktop_home ~ '/.config/hexen/theme/waybar.css')
+    fail_msg: 'Desktop preflight: refusing to replace unmanaged Waybar theme CSS.'
+  when: _desktop_waybar_theme_css.stat is defined
+
+- name: Inspect Walker files in a user-owned config directory
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/walker/{{ item }}'
+    follow: false
+  loop: '{{ desktop_split_config_files.walker }}'
+  register: _desktop_walker_files
+  when: >-
+    not ((_desktop_split_config_directories.results | selectattr('item.key', 'equalto', 'walker') | first).stat.islnk | default(false))
+
+- name: Preserve unmanaged Walker files
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.islnk | default(false)) and
+         item.stat.lnk_source == desktop_repo_root ~ '/config/walker/' ~ item.item)
+    fail_msg: 'Desktop preflight: refusing to replace unmanaged Walker file {{ item.item }}.'
+  loop: "{{ _desktop_walker_files.results | default([]) | selectattr('stat', 'defined') | list }}"
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Inspect the Walker active-theme CSS link destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/walker/themes/hexen/hexen-theme.css'
+    follow: false
+  register: _desktop_walker_theme_css
+  when: >-
+    not ((_desktop_split_config_directories.results | selectattr('item.key', 'equalto', 'walker') | first).stat.islnk | default(false))
+
+- name: Preserve an unmanaged Walker active-theme CSS file
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_walker_theme_css.stat.exists and not (_desktop_walker_theme_css.stat.islnk | default(false))) or
+        ((_desktop_walker_theme_css.stat.islnk | default(false)) and
+         _desktop_walker_theme_css.stat.lnk_target == _desktop_home ~ '/.config/hexen/theme/walker.css')
+    fail_msg: 'Desktop preflight: refusing to replace unmanaged Walker theme CSS.'
+  when: _desktop_walker_theme_css.stat is defined
+
+- name: Inspect Walker theme parent directories when its config is user-owned
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/walker/{{ item }}'
+    follow: false
+  loop: [themes, themes/hexen]
+  register: _desktop_walker_theme_directories
+  when: >-
+    not ((_desktop_split_config_directories.results | selectattr('item.key', 'equalto', 'walker') | first).stat.islnk | default(false))
+
+- name: Preserve unmanaged Walker theme parent directories
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not item.stat.exists and not (item.stat.islnk | default(false))) or
+        ((item.stat.isdir | default(false)) and not (item.stat.islnk | default(false)) and
+         item.stat.uid == _desktop_uid | int)
+    fail_msg: 'Desktop preflight: refusing to use unmanaged Walker theme directory {{ item.item }}.'
+  loop: "{{ _desktop_walker_theme_directories.results | default([]) | selectattr('stat', 'defined') | list }}"
+  loop_control:
+    label: '{{ item.item }}'
+
 - name: Inspect the selected Hexen launcher setting
   ansible.builtin.stat:
     path: '{{ _desktop_home }}/.config/hexen/launcher'
@@ -167,6 +297,88 @@
       Desktop preflight: {{ _desktop_home }}/.config/hexen/launcher must contain
       either 'fuzzel' or 'walker'. Review the file before provisioning.
   when: _desktop_launcher_setting.stat.exists
+
+- name: Inspect the Hexen state directory setting
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/hexen/state-home'
+    follow: false
+  register: _desktop_state_home_setting
+
+- name: Preserve unmanaged Hexen state directory settings
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_state_home_setting.stat.exists and not (_desktop_state_home_setting.stat.islnk | default(false))) or
+        ((_desktop_state_home_setting.stat.isreg | default(false)) and
+         not (_desktop_state_home_setting.stat.islnk | default(false)) and
+         _desktop_state_home_setting.stat.uid == _desktop_uid | int)
+    fail_msg: >-
+      Desktop preflight: refusing to replace unmanaged state directory setting at
+      {{ _desktop_home }}/.config/hexen/state-home.
+
+- name: Read an existing Hexen state directory setting
+  ansible.builtin.slurp:
+    src: '{{ _desktop_home }}/.config/hexen/state-home'
+  register: _desktop_state_home_setting_content
+  when: _desktop_state_home_setting.stat.exists
+
+- name: Require the Hexen state directory setting to match provisioning
+  ansible.builtin.assert:
+    that:
+      - _desktop_state_home_setting_content.content | b64decode | trim == desktop_xdg_state_home
+    fail_msg: >-
+      Desktop preflight: {{ _desktop_home }}/.config/hexen/state-home differs from
+      desktop_xdg_state_home. Review and reconcile the value before provisioning.
+  when: _desktop_state_home_setting.stat.exists
+
+- name: Inspect the active theme config alias
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/hexen/theme'
+    follow: false
+  register: _desktop_theme_config_alias
+
+- name: Preserve an unmanaged active theme config alias
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_theme_config_alias.stat.exists and not (_desktop_theme_config_alias.stat.islnk | default(false))) or
+        ((_desktop_theme_config_alias.stat.islnk | default(false)) and
+         _desktop_theme_config_alias.stat.lnk_target == (desktop_xdg_state_home | regex_replace('/+$', '')) ~ '/hexen/themes/current')
+    fail_msg: 'Desktop preflight: refusing to replace an unmanaged ~/.config/hexen/theme path.'
+
+- name: Inspect the Hexen Themes desktop application entry
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/share/applications/hexen-themes.desktop'
+    follow: false
+  register: _desktop_themes_application_entry
+
+- name: Preserve an unmanaged Hexen Themes desktop application entry
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_themes_application_entry.stat.exists and not (_desktop_themes_application_entry.stat.islnk | default(false))) or
+        ((_desktop_themes_application_entry.stat.islnk | default(false)) and
+         _desktop_themes_application_entry.stat.lnk_target == desktop_repo_root ~ '/config/applications/hexen-themes.desktop')
+    fail_msg: >-
+      Desktop preflight: refusing to replace an unmanaged application entry at
+      {{ _desktop_home }}/.local/share/applications/hexen-themes.desktop.
+
+- name: Inspect the Hexen Theme Builder desktop application entry
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/share/applications/hexen-theme-builder.desktop'
+    follow: false
+  register: _desktop_theme_builder_application_entry
+
+- name: Preserve an unmanaged Hexen Theme Builder desktop application entry
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_theme_builder_application_entry.stat.exists and not (_desktop_theme_builder_application_entry.stat.islnk | default(false))) or
+        ((_desktop_theme_builder_application_entry.stat.islnk | default(false)) and
+         _desktop_theme_builder_application_entry.stat.lnk_target == desktop_repo_root ~ '/config/applications/hexen-theme-builder.desktop')
+    fail_msg: >-
+      Desktop preflight: refusing to replace an unmanaged application entry at
+      {{ _desktop_home }}/.local/share/applications/hexen-theme-builder.desktop.
 
 - name: Check manually installed Walker package set
   ansible.builtin.command:
@@ -278,3 +490,18 @@
         ((_desktop_helper.stat.islnk | default(false)) and
          _desktop_helper.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen-desktop')
     fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen-desktop helper.'
+
+- name: Inspect theme helper destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/bin/hexen-theme'
+    follow: false
+  register: _desktop_theme_helper
+
+- name: Preserve an existing unmanaged theme helper
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_theme_helper.stat.exists and not (_desktop_theme_helper.stat.islnk | default(false))) or
+        ((_desktop_theme_helper.stat.islnk | default(false)) and
+         _desktop_theme_helper.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen-theme')
+    fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen-theme helper.'

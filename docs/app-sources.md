@@ -8,6 +8,13 @@ checksum-pinned LocalSend AppImage. The other four non-repository applications w
 built, inspected, and installed in the VM using reviewed one-off commands on
 2026-10-26; no AUR automation is added to Ansible.
 
+Matugen and Hyprpaper are signed packages from Arch's official `extra`
+repository: [matugen](https://archlinux.org/packages/extra/x86_64/matugen/) and
+[hyprpaper](https://archlinux.org/packages/extra/x86_64/hyprpaper/). Matugen
+renders local theme files from repository-owned templates; Hyprpaper restores
+the selected local wallpaper. Theme selection does not download a theme or run
+third-party hooks.
+
 VM verification: the first full provisioning run installed the official apps
 (`ok=42 changed=1 failed=0`); the second reported `ok=42 changed=0 failed=0`.
 Neovim startup and Lazygit version output passed. The merged owner editor and

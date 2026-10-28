@@ -71,11 +71,12 @@ case "${1:-}" in
     grim -g "$region" - | wl-copy --type image/png
     notify-send 'Screenshot' 'Region copied to clipboard' ;;
   menu)
-    choice=$(printf '%s\n' 'Applications' 'Edit keybindings' 'Edit theme' 'System' | pick_menu 'Hexen: ') || exit 0
+    choice=$(printf '%s\n' 'Applications' 'Themes' 'Edit keybindings' 'Edit Hyprland appearance' 'System' | pick_menu 'Hexen: ') || exit 0
     case "$choice" in
       Applications) exec "$0" launcher ;;
+      Themes) exec "$HOME/.local/bin/hexen-theme" ;;
       'Edit keybindings') exec ghostty nvim "$HOME/.config/hypr/bindings.lua" ;;
-      'Edit theme') exec ghostty nvim "$HOME/.config/hypr/theme.lua" ;;
+      'Edit Hyprland appearance') exec ghostty nvim "$HOME/.config/hypr/theme.lua" ;;
       System) exec "$0" system-menu ;;
     esac ;;
   system-menu)

@@ -2,6 +2,9 @@
 local directory = os.getenv('HOME') .. '/.config/hypr/'
 package.path = directory .. '?.lua;' .. package.path
 require('theme')
+local generated_theme = os.getenv('HOME') .. '/.config/hexen/theme/hyprland.lua'
+local generated_theme_file = io.open(generated_theme, 'r')
+if generated_theme_file then generated_theme_file:close(); dofile(generated_theme) end
 require('bindings')
 hl.monitor({ output = '', mode = 'preferred', position = 'auto', scale = 'auto' })
 hl.config({
@@ -23,6 +26,7 @@ hl.on('hyprland.start', function()
   hl.exec_cmd('/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1')
   hl.exec_cmd('waybar')
   hl.exec_cmd('mako')
+  hl.exec_cmd('hyprpaper')
   hl.exec_cmd('hypridle')
   -- Clipboard history is local to this user. Remove these to disable storage.
   hl.exec_cmd('wl-paste --type text --watch cliphist store')

@@ -46,7 +46,7 @@
 - Modify: `ansible/roles/desktop/defaults/main.yml`
 - Create: `config/themes/tokyo-night/theme.toml`
 - Create: `config/themes/tokyo-night/palette.json`
-- Create: `config/themes/templates/{hyprland.lua,waybar.css,ghostty.conf,mako.conf,fuzzel.ini,walker.css,hyprlock.conf,hyprpaper.conf}`
+- Create: `config/themes/templates/{hyprland.lua,waybar.css,ghostty.conf,ghostty-curated.conf,mako.conf,fuzzel.ini,walker.css,hyprlock.conf}`
 - Create: `config/themes/README.md`
 
 **Interfaces:**
@@ -55,11 +55,11 @@
 - A pack may provide a curated `palette.json` with semantic fields used by all templates. When `wallpaper` is present, Matugen derives a palette from that image; otherwise the curated palette is rendered directly.
 - Template inputs and output filenames form the stable app-fragment API consumed by Task 3.
 
-- [ ] Add `matugen` and `hyprpaper` to the official desktop package list.
-- [ ] Define the Tokyo Night palette from current values without adding a wallpaper image.
-- [ ] Write one app fragment template per supported consumer, using a shared set of semantic color fields.
-- [ ] Document how a user copies the starter pack, edits its manifest/palette, and optionally adds a wallpaper.
-- [ ] Confirm every template consumes only fields provided by the curated palette or Matugen output.
+- [x] Add `matugen` and `hyprpaper` to the official desktop package list.
+- [x] Define the Tokyo Night palette from current values without adding a wallpaper image.
+- [x] Write one app fragment template per color consumer, using a shared set of semantic color fields; generate Hyprpaper's wallpaper stanza from validated manifest metadata.
+- [x] Document how a user copies the starter pack, edits its manifest/palette, and optionally adds a wallpaper.
+- [x] Confirm every template consumes only fields provided by the curated palette or Matugen output.
 
 ## Task 2: Theme command and safe activation
 
@@ -76,11 +76,11 @@
 - `hexen-theme` (no arguments) opens a menu using the selected Fuzzel or Walker backend and applies the selected pack.
 - Errors go to stderr with nonzero exit status; the current symlink changes only after all rendering and path checks succeed.
 
-- [ ] Implement strict slug/manifest/path validation with Python standard-library TOML and JSON parsers; reject relative paths that resolve outside the pack while allowing explicit absolute user wallpaper paths.
-- [ ] Build the Matugen config at runtime so generated app fragments target the staging directory rather than the repo or active state.
-- [ ] Support image-based generation and curated-palette rendering through Matugen's template mode.
-- [ ] Add the interactive selector using the existing `~/.config/hexen/launcher` value; keep explicit CLI commands usable without a graphical session.
-- [ ] Link the executable to `~/.local/bin/hexen-theme` through the desktop role.
+- [x] Implement strict slug/manifest/path validation with Python standard-library TOML and JSON parsers; reject relative paths that resolve outside the pack while allowing explicit absolute user wallpaper paths.
+- [x] Build the Matugen config at runtime so generated app fragments target the staging directory rather than the repo or active state.
+- [x] Support image-based generation and curated-palette rendering through Matugen's template mode.
+- [x] Add the interactive selector using the existing `~/.config/hexen/launcher` value; keep explicit CLI commands usable without a graphical session.
+- [x] Link the executable to `~/.local/bin/hexen-theme` through the desktop role.
 
 ## Task 3: Wallpaper and application integration
 
@@ -100,15 +100,15 @@
 
 **Interfaces:**
 
-- App configs include `~/.local/state/hexen/themes/current/<fragment>`; no include writes through the repo's config symlinks.
+- App configs include generated fragments through the stable `~/.config/hexen/theme/<fragment>` link; no include writes through the repo's config symlinks.
 - Hyprpaper starts with the Hyprland user session and loads its generated config fragment at startup. Applying a pack with a wallpaper changes the live wallpaper; a pack without one retains the plain background.
 - `hexen-desktop`'s existing menu includes `Themes` and launches `hexen-theme`.
 
-- [ ] Replace duplicated app color literals with generated-fragment imports while retaining current spacing, fonts, opacity, and component layout.
-- [ ] Start Hyprpaper from the desktop session and use the current pack's generated wallpaper configuration for login restore.
-- [ ] On successful apply, change the wallpaper, reload Hyprland and Waybar, refresh Mako/Walker where supported, and leave Ghostty to pick up colors on its next window.
-- [ ] Keep a wallpaper-free Tokyo Night selection visually equivalent to today's fixed palette.
-- [ ] Add `Themes` to the existing Hexen menu without taking over a current Omarchy binding.
+- [x] Replace duplicated app color literals with generated-fragment imports while retaining current spacing, fonts, opacity, and component layout.
+- [x] Start Hyprpaper from the desktop session and use the current pack's generated wallpaper configuration for login restore.
+- [x] On successful apply, change the wallpaper, reload Hyprland and Waybar, refresh Mako/Walker where supported, and leave Ghostty to pick up colors after its config is reloaded or the process is restarted.
+- [x] Keep the wallpaper-free Tokyo Night selection's shared surface/accent colors aligned with today's palette.
+- [x] Add `Themes` to the existing Hexen menu without taking over a current Omarchy binding.
 
 ## Task 4: Provisioning and user documentation
 
@@ -118,10 +118,10 @@
 - Modify: `docs/app-sources.md`
 - Modify: `config/themes/README.md`
 
-- [ ] Explain `hexen-theme`, the manifest fields, where to place wallpaper images, and how to add/switch a pack.
-- [ ] Record that Matugen and Hyprpaper are signed official-repository packages.
-- [ ] Document that Neovim themes remain independent and that generated files live under the user's state directory.
-- [ ] Describe recovery behavior if a pack cannot be rendered and how to select Tokyo Night from the CLI.
+- [x] Explain `hexen-theme`, the manifest fields, where to place wallpaper images, and how to add/switch a pack.
+- [x] Record that Matugen and Hyprpaper are signed official-repository packages.
+- [x] Document that Neovim themes remain independent and that generated files live under the user's state directory.
+- [x] Describe recovery behavior if a pack cannot be rendered and how to select Tokyo Night from the CLI.
 
 ## Final review
 

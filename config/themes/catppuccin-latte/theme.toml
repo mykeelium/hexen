@@ -1,0 +1,4 @@
+name = "Catppuccin Latte"
+mode = "light"
+type = "scheme-tonal-spot"
+palette = "palette.json"

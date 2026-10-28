@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Themes
+Comment=Choose a Hexen desktop theme
+Type=Application
+Terminal=false
+Categories=Settings;DesktopSettings;
+Icon=preferences-desktop-theme
+Keywords=theme;appearance;color;wallpaper;
+Exec=/usr/bin/bash -lc "exec ~/.local/bin/hexen-theme"

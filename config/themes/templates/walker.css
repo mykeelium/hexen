@@ -1,0 +1,8 @@
+/* Generated from the active Hexen theme pack by Matugen. */
+@define-color window_bg_color {{ colors.background.default.hex }};
+@define-color elevated_bg_color {{ colors.surface_variant.default.hex }};
+@define-color accent_bg_color {{ colors.primary.default.hex }};
+@define-color theme_fg_color {{ colors.on_background.default.hex }};
+@define-color muted_fg_color {{ colors.on_surface_variant.default.hex }};
+@define-color error_bg_color {{ colors.error.default.hex }};
+@define-color error_fg_color {{ colors.on_error.default.hex }};
