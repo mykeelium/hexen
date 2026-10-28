@@ -2,6 +2,10 @@
 
 This procedure intentionally keeps destructive disk selection and all credentials interactive. A saved Archinstall disk configuration can point at a stale device name or omit the intended encryption settings; do not replay one blindly.
 
+For exact menu paths, nested prompts, and the saved rehearsal-VM choices, follow
+the [Archinstall walkthrough and machine choices](choices.md). It covers every
+top-level menu in Archinstall 4.5, the final review, and first-boot provisioning.
+
 ## Run the guided installer
 
 1. Boot the official Arch installation ISO in UEFI mode.

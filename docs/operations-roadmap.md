@@ -55,6 +55,14 @@ These are the current blockers to wiping the work computer.
   needed for work, confirm the FIDO authenticator and password manager work
   after a clean boot, and make sure account recovery does not depend on the old
   OS. Keep account tokens and private keys out of the repository.
+- [ ] **Accept the owner's YubiKey and its recovery path.** On the target
+  laptop, identify the key model and supported interfaces, verify browser
+  FIDO2/WebAuthn and required work-account/password-manager authentication after
+  a clean boot, and test a separately enrolled backup key or the account's
+  independent recovery method. Record compatibility and procedures, not PINs,
+  credentials, recovery codes, or enrollment files. Linux login/sudo and disk
+  unlocking are separate opt-in work below; account acceptance does not prove
+  those paths work.
 - [ ] **Accept the Windows lab workload.** Create the required Windows VMs with
   virt-manager, check that memory/storage remain adequate for simultaneous
   guests, and verify the isolated libvirt network is not bridged to a work LAN.
@@ -107,6 +115,45 @@ a clear day-to-day workflow and explicit machine profiles.
   the project expands to many home-directory files, multiple operating systems,
   or templated secret handling. For the current Arch-only setup, adding it now
   would duplicate Ansible/Git responsibilities without solving a proven gap.
+
+## Priority 1: add opt-in YubiKey authentication
+
+Treat the YubiKey as several authentication integrations with separate enrollment
+and recovery requirements. Begin with browser/work-account acceptance above;
+do not make a working base install depend on a key being present.
+
+- [ ] **Define the intended uses and hardware compatibility.** Record which
+  keys support the requested FIDO2/WebAuthn, SSH security-key, PIV, OpenPGP, or
+  OATH features; include only the uses the owner needs. Review official Arch
+  packages, USB permissions, and any required smart-card service for those uses.
+  Provisioning must not reset a key, change its PIN, overwrite credentials, or
+  enroll it unattended. Keep device-specific enrollment data outside Git.
+- [ ] **Design Linux login, sudo, and desktop authorization deliberately.**
+  Decide which of TTY login, sudo, Polkit, and Hyprlock should use the key, and
+  whether each requires password plus touch/PIN or supports a passwordless mode.
+  Review the actual PAM stack for each service using
+  [Yubico's pam-u2f documentation](https://developers.yubico.com/pam-u2f/).
+  Keep enrollment interactive and enabling PAM integration explicitly opt-in.
+- [ ] **Prove recovery before enforcing key authentication.** Enroll and test a
+  second key where supported, define how lost-key recovery is authorized, and
+  preserve a tested administrative/recovery route. Test correct and wrong PINs,
+  missing/unregistered keys, touch timeout, screen unlock, suspend/resume, cold
+  boot, and deliberate recovery. A normal authentication failure must not
+  silently bypass the chosen policy. Validate on the target laptop; a VM without
+  the actual key cannot accept the physical-device workflow.
+- [ ] **Evaluate FIDO2 disk unlocking as a separate boot project.** The current
+  validated boot path uses mkinitcpio's `encrypt` hook. Review a compatible
+  token-unlock design before changing that contract; enrollment alone is not a
+  proven boot path. If adopting
+  [systemd-cryptenroll](https://www.freedesktop.org/software/systemd/man/latest/systemd-cryptenroll.html),
+  validate the corresponding initramfs/unlock integration in a disposable VM
+  and then on hardware. Retain an independent LUKS passphrase/recovery method,
+  protect an appropriate header backup, and test boot/recovery with the key
+  absent. Do not remove working passphrase slots as a provisioning step.
+- [ ] **Document daily use and replacement.** Cover enrollment, backup-key
+  registration, replacement/revocation, PIN retry behavior, account recovery,
+  and how to restore the chosen PAM/boot configuration. Implement read-only
+  diagnostics before offering any enrollment or authentication-policy changes.
 
 ## Priority 1: complete the desktop capture workflow
 
