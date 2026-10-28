@@ -322,6 +322,12 @@ The calculator is Elephant's `calc` provider. The added `websearch` provider
 uses Google and is hidden when app/calculator results exist. Opening the search
 requires selecting it and pressing Enter. Typing a phrase alone does not open
 a browser or submit the phrase to Google. Web-search history is disabled.
+Selecting the Google result sends its URL to `xdg-open`, so an HTTP/HTTPS
+browser handler must be available. Zen is the chosen browser: in the clean VM,
+installing Zen registered `zen.desktop` as the handler, and `xdg-open` started
+Zen with a Google test URL. Check
+`xdg-mime query default x-scheme-handler/https` on machines that already have
+another browser.
 
 Install the matching `elephant-websearch` package using the updated
 [Walker build instructions](../install/manual-apps/walker/) before selecting

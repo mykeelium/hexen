@@ -7,3 +7,5 @@ apps_packages:
   # Choose OBS's JACK provider in the same transaction; the desktop uses PipeWire.
   - pipewire-jack
   - obs-studio
+  - zed
+  - flatpak

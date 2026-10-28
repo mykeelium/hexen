@@ -84,6 +84,54 @@
   when: base_firewall_runtime_zone.stdout != base_firewall_default_zone
   changed_when: true
 
+- name: Inspect persistent intra-zone forwarding in the untrusted default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - --permanent
+      - "--zone={{ base_firewall_default_zone }}"
+      - --query-forward
+  register: base_firewall_permanent_forward
+  changed_when: false
+  failed_when: base_firewall_permanent_forward.rc not in [0, 1]
+  tags:
+    - base_firewall_forward
+
+- name: Disable persistent intra-zone forwarding in the untrusted default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - --permanent
+      - "--zone={{ base_firewall_default_zone }}"
+      - --remove-forward
+  when: base_firewall_permanent_forward.rc == 0
+  changed_when: true
+  tags:
+    - base_firewall_forward
+
+- name: Inspect runtime intra-zone forwarding in the untrusted default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - "--zone={{ base_firewall_default_zone }}"
+      - --query-forward
+  register: base_firewall_runtime_forward
+  changed_when: false
+  failed_when: base_firewall_runtime_forward.rc not in [0, 1]
+  tags:
+    - base_firewall_forward
+
+- name: Disable runtime intra-zone forwarding in the untrusted default zone
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - "--zone={{ base_firewall_default_zone }}"
+      - --remove-forward
+  when: base_firewall_runtime_forward.rc == 0
+  changed_when: true
+  tags:
+    - base_firewall_forward
+
 - name: Install zram generator configuration
   ansible.builtin.template:
     src: zram-generator.conf.j2

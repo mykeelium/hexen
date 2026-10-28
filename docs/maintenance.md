@@ -21,16 +21,23 @@ sudo pacdiff
 
 Inspect each proposed `.pacnew`/`.pacsave` diff and choose the intended result;
 these files are not safe to merge blindly. To preview package-cache cleanup
-without deleting files, use `sudo paccache --dryrun --remove`; the weekly timer
-performs the ordinary cleanup. A recovery checkpoint's package list and `/boot`
-archive are separate from the cache.
+without deleting files, use `sudo paccache --dryrun --keep 3`; the weekly timer
+performs the ordinary cleanup and keeps the newest three versions by default.
+A recovery checkpoint's package list and `/boot` archive are separate from the
+cache.
 
 ## Firewall baseline
 
 Firewalld is the only workstation firewall manager in the base role. It starts
-at boot with the `drop` zone as the persistent and runtime default. This drops
-unsolicited inbound traffic on new or unassigned NetworkManager profiles while
-allowing connections initiated by the workstation and their return traffic.
+at boot with the `drop` zone as the persistent and runtime default, with
+intra-zone forwarding disabled in that untrusted zone. The packaged `drop`
+zone enabled intra-zone forwarding in the rehearsal VM; the role now removes
+that exception. Firewalld documents that this setting permits forwarding
+between interfaces or sources in one zone; see its official
+[zone documentation](https://firewalld.org/documentation/man-pages/firewalld.zone.html).
+The default drops unsolicited inbound traffic on new or unassigned
+NetworkManager profiles while allowing connections initiated by the workstation
+and their return traffic.
 Firewalld's built-in `allow-host-ipv6` policy retains the ICMPv6 needed to bring
 up IPv6. The baseline opens no host service such as SSH.
 

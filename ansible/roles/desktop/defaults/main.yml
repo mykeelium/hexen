@@ -34,6 +34,8 @@ desktop_walker_provider_files:
   - /usr/lib/elephant/calc.so
   - /usr/lib/elephant/websearch.so
   - /usr/lib/elephant/providerlist.so
+desktop_vulkan_driver_packages: []
+
 desktop_packages:
   - hyprland
   - uwsm

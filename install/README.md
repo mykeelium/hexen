@@ -74,8 +74,10 @@ recovery procedures, including their current validation status.
 
 For a rehearsal guest using libvirt's default NAT uplink, run
 `./install/provision.sh --vm` instead of the workstation invocation. This leaves
-nested libvirt networks unmanaged to avoid the uplink subnet collision, while
-still configuring virtualization sockets and storage. Choose Fuzzel unless the
+nested libvirt networks unmanaged to avoid the uplink subnet collision, selects
+the `vulkan-virtio` driver required by Zed for the virtual GPU, and still
+configures virtualization sockets and storage. The physical workstation must
+select a Vulkan driver that matches its actual GPU. Choose Fuzzel unless the
 separately reviewed Walker packages are already installed. Bluetooth remains
 enabled for future hardware, but its service is started only when its kernel
 hardware directory exists. Keep the same mode and launcher on repeat runs.

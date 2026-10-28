@@ -1,14 +1,89 @@
 # Current development checkpoint
 
-Updated 2026-10-26. All seven requested apps are installed in the VM, and all
-four manually built apps reached their welcome/sign-in screens. The owner will
-handle account sign-in on another computer. A single interactive
-`install/provision.sh` entrypoint now applies the system and desktop Ansible
-roles after Archinstall. Do not repeat VM installation or app builds. Repository
-changes are saved but uncommitted. Preserve the working copy, including
-untracked guides and tests; do not reset or clean it.
+Updated 2026-10-28. The 2026-10-26 app and recovery notes below describe the
+older `hexen-archinstall` VM; they are historical evidence, not acceptance of
+the clean rehearsal VM. The separate `hexen-rehearsal-20261027` VM now has
+Walker 2.17.2 and all seven matching Elephant 2.22.1 providers built from the
+commits in `install/manual-apps/walker/sources.lock`, reviewed, and installed.
+The fixed `install/provision.sh --vm` run completed with Walker selected and
+zero failed Ansible tasks. Elephant's service was started in the active user
+session; Walker opened and displayed desktop applications. Direct Elephant
+queries returned the expected calculator result (`1+1` -> `2`), Google search
+action for a sample term, and a matching Ghostty desktop entry. Fuzzel remains
+installed but is no longer the selected launcher. Repository changes are saved
+but uncommitted; preserve this working copy and do not reset or clean it.
 
-## VM and access
+Zen Browser 1.23.4b-1 was also built from reviewed recipe commit
+`ff5b152a31356577936690ccd32599e851326b85` and installed in the clean VM. Its
+upstream archive passed the recipe's SHA-256 check; the local package archive
+SHA-256 is `d792eb7429500d4f46a3fa0150114243cfd5cf52d6b7c43038c409f8f7682ed7`.
+The VM now reports `zen.desktop` as its HTTP/HTTPS handler, and `xdg-open`
+started Zen with a Google test URL. The exact Elephant activation request was
+also issued; the live Hyprland client list confirmed the Google Search window
+in Zen.
+
+The clean-VM app pass installed Zoom 7.2.1-1 and Slack 4.52.182-1. Slack reached
+its sign-in screen without account sign-in. Zoom opened its Workplace window,
+but a later unlocked visual check found a “Zoom quit unexpectedly” report over
+it. 1Password 8.12.42-36 passed its vendor signature and package checks, but
+its launch opened a Crash Reporter window. Zed opens, but logs show Vulkan
+adapter initialization failed and it selected software llvmpipe despite
+`vulkan-virtio` being installed. The VM's virtio video device has 3D
+acceleration disabled. These issues keep the application gate open. Hyprmon at
+commit `32ad27f94f40fd0dd81f982cc8208bb615607202` passed `go test ./...`, built,
+and opened through the Display settings Ghostty command; its apply/save keys
+have not been exercised.
+
+Bitwarden Desktop was added to the apps role from the Bitwarden-verified
+Flathub listing. In the rehearsal VM, Flatpak 1:1.18.4-2 and Bitwarden
+2026.10.0 installed, the app opened to its login screen without sign-in, and a
+second apps-role run reported zero changes. GNOME keyring and `libsecret` are
+available. Flatpak grants broad device access plus specific browser integration
+paths; its permissions were reviewed. Native messaging with Zen did not start
+successfully and remains an open browser-integration check. See
+[`app sources`](app-sources.md#bitwarden-flathub-follow-up-2026-10-28).
+
+The 2026-10-28 maintenance audit accepted `pacman-contrib` in the rehearsal VM:
+its weekly timer is active, the packaged `paccache -r` retains the default
+three versions, and the dry run found no eligible entries. The documented
+preview command was fixed to `paccache --dryrun --keep 3`. Firewalld is active
+with persistent/runtime `drop` defaults and no listening sockets, but its
+packaged drop zone enabled intra-zone forwarding. The base role now disables
+that forwarding in both runtime and permanent state; its second targeted run
+reported zero changes and outbound HTTPS still worked. Broader profile,
+virtualization, VPN, and external-connectivity firewall acceptance remains open.
+See [`operations roadmap`](operations-roadmap.md).
+
+Snapper cleanup passed its rehearsal check: the timer is active and the installed
+7-day/10-and-5 policy matches the source. A disposable three-snapshot `number`
+test pruned the oldest snapshot at a temporary two-snapshot limit, preserved all
+existing recovery snapshots, and removed the test artifacts. The original policy
+was restored. SSD trim remains deferred until the physical disk layout and
+discard tradeoff are reviewed.
+
+The owner created the GNOME keyring in response to the Zed prompt; its user
+service is active. Account sign-in remains deferred. See the latest per-app
+evidence and open checks in [`app sources`](app-sources.md#clean-rehearsal-vm-application-pass-2026-10-28).
+
+A provisioning bug was found and fixed during this run: the VM Vulkan package
+override used Ansible's free-form extra-vars syntax, which parsed the intended
+list as a string. It is now passed as JSON. The provisioner's Walker package
+precheck also now includes `elephant-websearch`.
+
+## Active clean rehearsal VM
+
+- Domain `hexen-rehearsal-20261027`, connection `qemu:///system`; this is the
+  current application-acceptance VM. The owner is handling account sign-ins on
+  another computer; do not enter account credentials here.
+- It auto-locks during idle periods. The owner may unlock it for visual checks;
+  do not type or request their passwords.
+- Current package/source evidence is recorded in
+  [`app-sources.md`](app-sources.md#clean-rehearsal-vm-application-pass-2026-10-28).
+
+## Historical installed VM and access (2026-10-26)
+
+The following VM, disk, SSH alias and commands are historical recovery notes;
+they refer to `hexen-archinstall`, not the active clean rehearsal VM above.
 
 - Domain `hexen-archinstall`, connection `qemu:///system`, currently running
   from its installed disk and already unlocked. Four CPUs, 8 GiB RAM, 64 GiB

@@ -367,6 +367,10 @@ acceptance gates.
 - [VM development workflow](../vm/README.md) for consoles and explicit remote access.
 
 The rehearsal VM's menus/source, blank disk, UEFI, DNS, HTTPS, and time sync were
-checked on 2026-10-27. The new installation has not yet completed end to end.
+checked on 2026-10-27. The owner completed installation from the official
+2026.10.01 ISO using Archinstall 4.5, then confirmed Limine boot, LUKS unlock,
+and login to `mcuomo`. Initial `./install/provision.sh --vm` completed at source
+revision `d2a4f8d` with Fuzzel selected; the remaining clean-VM application and
+current-source acceptance gates are tracked in `docs/operations-roadmap.md`.
 Laptop disk identity, graphics, firmware, Wi-Fi, input, and suspend behavior
 remain unvalidated; do not treat the VM-specific choices as a laptop inventory.

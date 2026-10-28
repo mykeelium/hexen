@@ -34,11 +34,12 @@ update and recover; a custom ISO can be a separate project if it becomes useful.
 
 These are the current blockers to wiping the work computer.
 
-- [ ] **Rehearse a clean install from the current official Arch ISO.** Use a
-  disposable VM disk, follow the Archinstall choices, boot through encrypted
-  Limine, clone the repo to its intended permanent path, and run
-  `install/provision.sh`. Record the exact point where manual application steps
-  or user choices remain.
+- [x] **Rehearse a clean install from the official Arch ISO.** Completed on
+  2026-10-27 using the 2026.10.01 ISO and Archinstall 4.5 on the disposable
+  rehearsal disk. The owner confirmed encrypted Limine boot and login; initial
+  `install/provision.sh --vm` completed with Fuzzel at source revision `d2a4f8d`.
+  The separate clean-VM application and current-source acceptance gates below
+  remain open. See [`machine choices`](../install/archinstall/choices.md).
 - [ ] **Exercise a real full system upgrade.** From a pre-update root snapshot
   and matching `/boot` archive, install an actually newer kernel, reboot, unlock,
   and confirm Limine, initramfs, NetworkManager, audio, desktop, and the
@@ -76,12 +77,43 @@ These are the current blockers to wiping the work computer.
   the default. Explicitly decide which manually installed applications are
   required on the work computer and who updates them.
 - [ ] **Complete application installation in the clean rehearsal VM.** Install
-  and launch Zen, 1Password, Zoom, Slack, and Hyprmon using their reviewed
-  procedures. Install matching Walker/Elephant/provider builds if Walker is the
+  and launch Zed, Zen, 1Password, Bitwarden, Zoom, Slack, and Hyprmon using
+  their reviewed procedures. Confirm Zed launches with the selected Vulkan
+  driver. Install matching Walker/Elephant/provider builds if Walker is the
   selected launcher, and test app search, calculations, and Google fallback.
   Verify normal/private browser shortcuts and required desktop entries. Evidence
   from the older acceptance VM does not complete this clean-VM gate; account
-  sign-in remains an owner action.
+  sign-in remains an owner action. On 2026-10-28, the separate clean rehearsal
+  VM built and installed Walker 2.17.2 with all seven Elephant 2.22.1 providers
+  from the pinned commits in `install/manual-apps/walker/sources.lock`.
+  Provisioning selected Walker successfully; the GUI opened, and direct
+  provider queries returned an app match, `1+1` -> `2`, and the configured
+  Google search action. This verifies Walker's component of the gate. Zen
+  Browser 1.23.4b-1 was built from its reviewed recipe and installed; the
+  Google test URL is now visible in the running Zen window. The VM also built
+  and installed 1Password 8.12.42-36, Zoom 7.2.1-1, and Slack 4.52.182-1 from
+  their inspected local packages. Slack displayed its sign-in screen and Zoom
+  initially displayed its Workplace window; no account was signed in. During
+  the later unlocked visual check, a Zoom “quit unexpectedly” report appeared
+  over the Workplace window. The 1Password
+  launch presented its Crash Reporter window instead of its normal welcome
+  screen; the cause still needs investigation. The GNOME keyring service is
+  active, and the user created the keyring. `pacman -Qkk` found no changed files
+  in Zoom, Slack, Zed, or Zen; 1Password's only difference is its expected
+  BrowserSupport group/mode change from its reviewed install script.
+  Hyprmon was built at the pinned commit, its upstream Go tests passed, and its
+  display-settings TUI opened in Ghostty. Its monitor save/apply action remains
+  untested to avoid changing the VM display layout. Zed opens, but reports
+  software-emulated llvmpipe rather than using the selected `vulkan-virtio`
+  driver; the VM's virtio video has no 3D acceleration enabled. Resolve or
+  explicitly scope this VM limitation before accepting the Zed GPU criterion.
+  App launch evidence does not complete the application gate: investigate the
+  1Password launch, resolve Zed's Vulkan acceptance, verify Walker's normal and
+  private browser shortcuts, and complete the account-free post-reboot checks.
+  Bitwarden Desktop 2026.10.0 was installed from the Bitwarden-verified Flathub
+  listing; its login screen opened without sign-in. The second apps-role run
+  reported zero changes. Its Flatpak permissions and keyring availability were
+  inspected; native messaging with Zen remains unverified.
 - [ ] **Converge the VM onto one reviewed source revision.** Reconcile the
   VM-local lock-screen change with the development checkout, review the pending
   desktop/Starship changes, and deploy a recorded Git checkpoint. Confirm the
@@ -104,11 +136,16 @@ selection. Implement them through the declared package/service configuration;
 leave each item unchecked until its configuration and acceptance checks pass.
 Physical-device acceptance remains deferred until the hardware phase.
 
-- [ ] **Accept `pacman-contrib` and its configuration/cache workflow.** The
+- [x] **Accept `pacman-contrib` and its configuration/cache workflow.** The
   package is declared for installation. The weekly `paccache.timer` is configured
   to retain its default three versions per package; `pacdiff` remains a manual
-  review step for `.pacnew`/`.pacsave` files. Confirm timer behavior and cache
-  retention in the rehearsal VM before marking this accepted.
+  review step for `.pacnew`/`.pacsave` files. In the rehearsal VM,
+  `pacman-contrib` 1.13.1-1 and `pacdiff` are installed; `paccache.timer` is
+  enabled and active with a weekly schedule, and the packaged service invokes
+  `paccache -r` with its default keep-three behavior. `paccache --dryrun --keep
+  3` reported no eligible cache entries. The documentation's dry-run command
+  was corrected after the old form returned “only one operation may be used at
+  a time.”
 - [ ] **Configure and accept independent `restic` backups.** The package is
   declared for installation; no destination or credentials are assumed. Choose
   an off-device destination, encrypted repository, schedule, exclusions,
@@ -123,7 +160,15 @@ Physical-device acceptance remains deferred until the hardware phase.
   default zone so unknown NetworkManager profiles start untrusted. Verify
   effective policy and conflicts in the rehearsal VM, then complete the
   connection, LocalSend, libvirt, VPN, and external IPv4/IPv6 tests in the next
-  section.
+  section. The 2026-10-28 VM audit found firewalld active/enabled, nftables and
+  UFW services inactive, `drop` as both defaults, and `enp1s0` in the active
+  `drop` zone. No listening sockets were reported. It also found the packaged
+  `drop` zone had intra-zone forwarding enabled; the base role now disables it
+  in both runtime and permanent configuration. The targeted role run changed
+  both settings; a second run reported zero changes. Runtime and permanent
+  queries now both report `forward=no`, and outbound HTTPS still returned HTTP
+  200. Custom zone ownership, VM/VPN forwarding, trusted-profile behavior, and
+  external IPv4/IPv6 probes remain unaccepted.
 - [ ] **Accept `fwupd` for firmware maintenance.** The package is declared; no
   firmware update is run automatically. Inspect supported devices and available
   firmware on the physical machine. Document the update/recovery procedure;
@@ -141,20 +186,27 @@ Physical-device acceptance remains deferred until the hardware phase.
   `intel-ucode` or `amd-ucode` as appropriate, verify its boot integration, and
   record GPU/Wi-Fi firmware and driver requirements. Absence in a virtual guest
   is not evidence that a physical machine can omit these checks.
-- [ ] **Accept snapshot cleanup and SSD maintenance policy.** Snapper is configured
-  for no automatic timeline creation; cleanup-managed disposable snapshots are
-  bounded by count and age, while update recovery checkpoints and matching `/boot`
-  archives are created without a cleanup tag and remain manual-retention pairs.
-  Verify cleanup in the rehearsal VM without removing the only known recovery
-  pair. `fstrim.timer` remains disabled until the physical LUKS/Btrfs layout and
-  discard/privacy tradeoff are reviewed.
+- [x] **Accept Snapper snapshot cleanup.** Snapper creates no automatic timeline
+  snapshots. Cleanup-managed disposable snapshots are bounded by count and age;
+  update recovery checkpoints and matching `/boot` archives have no cleanup tag
+  and remain manual-retention pairs. In the rehearsal VM, the active cleanup
+  timer and installed 7-day/10-and-5 policy matched the source template. A
+  disposable test created three `number` snapshots with temporary 1-second/two
+  snapshot limits; cleanup removed the oldest and retained the newest two while
+  preserving all existing recovery snapshots. The original policy was restored
+  and all test artifacts were removed.
+- [ ] **Review SSD trim policy on physical hardware.** `fstrim.timer` remains
+  disabled until the physical LUKS/Btrfs layout and discard/privacy tradeoff are
+  reviewed.
 
 ## Priority 0: implement and accept a robust workstation firewall
 
-The 2026-10-28 VM audit found nftables installed but no base-chain policy loaded.
-The required result is a persistent, tested workstation policy, with network
-exceptions documented by purpose and scope. VM acceptance comes first; the
-target laptop's network and hardware checks can follow later.
+The initial VM audit found nftables installed but no firewall policy loaded.
+Firewalld now runs and owns an nftables table with the default `drop` zone, and
+intra-zone forwarding is disabled in that zone. The required result is a
+persistent, tested workstation policy, with network exceptions documented by
+purpose and scope. VM acceptance comes first; the target laptop's network and
+hardware checks can follow later.
 
 - [ ] **Define the baseline and its ownership.** Manage repository-owned
   firewalld zones/policies declaratively. Deny unsolicited inbound traffic on

@@ -1,18 +1,20 @@
 # Reviewed manual application installation
 
-The automatic playbook installs official Arch packages. Zen, 1Password, Zoom,
-and Slack use reviewed manual builds. Their source/update details are in
+The automatic playbook installs official Arch packages, Flatpak, and Bitwarden
+Desktop from Flathub. Zen, 1Password, Zoom, and Slack use reviewed manual
+builds. Their source/update details are in
 [the application inventory](../../docs/app-sources.md). This keeps recipe and
 signing-key decisions visible rather than hiding them in an AUR helper.
 
-Walker is a separate optional desktop launcher. Its pinned manual recipe builds
-for Walker, Elephant, and selected providers are documented in
+Walker is the selected desktop launcher in the current setup. Its pinned
+manual recipe builds for Walker, Elephant, and selected providers are documented in
 [`walker/README.md`](walker/README.md). Build and install those packages before
-choosing Walker in the provisioner; Ansible never builds AUR packages.
-Fuzzel remains the default and comes from the official Arch repositories.
-Walker uses the desktopapplications, files, runner, calc, and providerlist
-integrations; it does not enable package search, AUR, Bluetooth, or clipboard
-history. Existing cliphist continues to provide clipboard history.
+selecting Walker; Ansible never builds AUR packages.
+Fuzzel remains available as an optional launcher and comes from the official
+Arch repositories.
+Walker uses the desktopapplications, files, runner, calc, websearch, and
+providerlist integrations; it does not enable package search, AUR, Bluetooth,
+or clipboard history. Existing cliphist continues to provide clipboard history.
 
 The first VM run is recorded in
 [validation-2026-10-26.json](validation-2026-10-26.json). Its artifact hashes
@@ -46,14 +48,16 @@ Do not add the desktop user to that helper group. Both 1Password and Slack
 include a root-owned 4755 Chromium sandbox helper. Do not disable application
 sandboxes to work around an untested launch.
 
-The apps are now installed in the disposable VM. No AUR helper, third-party
-pacman repository, Flatpak remote, or pacman signing key was added. The vendor
-public key used for source verification lives only in the VM build user's GPG
-keyring. Standard `pacman -Syu` does not update these manually built packages;
-repeat source review, verification, build, and inspection for updates.
+The reviewed AUR applications are installed in the disposable VM. Bitwarden
+Desktop is installed separately through the system Flathub remote, managed by
+the apps role. No AUR helper, third-party pacman repository, or pacman signing
+key was added. The vendor public key used for source verification lives only in
+the VM build user's GPG keyring. Standard `pacman -Syu` does not update the
+manually built packages or Flatpak applications; update Bitwarden separately
+with `flatpak update` after reviewing the app update.
 
-All four applications reached their expected welcome/sign-in windows in the VM.
-Work-account sign-in and vault access remain owner actions and can be completed
+Slack reached its sign-in window in the VM. Bitwarden opened its login screen;
+its account sign-in and vault access remain owner actions and can be completed
 on any computer. Installing the packages does not prove browser-extension or
-meeting sharing works; no 1Password browser trust allowlist has been configured
-and Zoom screen sharing still needs a live test.
+meeting sharing works; Bitwarden native messaging with the installed Zen
+profile, 1Password browser trust, and Zoom screen sharing still need acceptance.

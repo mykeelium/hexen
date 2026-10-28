@@ -4,7 +4,7 @@
 
 - name: Install the reviewed desktop and editor dependencies
   community.general.pacman:
-    name: '{{ desktop_packages + desktop_launcher_packages[desktop_launcher] }}'
+    name: '{{ desktop_packages + desktop_vulkan_driver_packages + desktop_launcher_packages[desktop_launcher] }}'
     state: present
 
 - name: Install the pinned screensaver animation engine

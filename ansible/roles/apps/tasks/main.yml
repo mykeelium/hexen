@@ -3,3 +3,17 @@
   community.general.pacman:
     name: '{{ apps_packages }}'
     state: present
+
+- name: Add the Flathub system remote
+  community.general.flatpak_remote:
+    name: flathub
+    state: present
+    flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+    method: system
+
+- name: Install Bitwarden Desktop from Flathub
+  community.general.flatpak:
+    name: com.bitwarden.desktop
+    remote: flathub
+    method: system
+    state: present

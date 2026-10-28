@@ -1,12 +1,15 @@
 # Application sources
 
-Reviewed on 2026-10-27 for x86_64 Arch. Package versions are observations, not
+Reviewed on 2026-10-28 for x86_64 Arch. Package versions are observations, not
 pins. Refresh this review when recipes, source URLs, privileges, or signatures
-change. The apps role installs four applications from official Arch repositories.
+change. The apps role installs five applications plus supporting packages from
+signed official Arch repositories, and Bitwarden Desktop from the verified
+Flathub listing.
 The desktop role also installs selected official command-line tools and the
-checksum-pinned LocalSend AppImage. The other four non-repository applications were
-built, inspected, and installed in the VM using reviewed one-off commands on
-2026-10-26; no AUR automation is added to Ansible.
+checksum-pinned LocalSend AppImage. The four AUR applications are built,
+inspected, and installed with reviewed one-off commands in a disposable VM; the
+latest clean-VM evidence is below. Hyprmon is built separately from its pinned
+upstream source. No AUR automation is added to Ansible.
 
 Matugen and Hyprpaper are signed packages from Arch's official `extra`
 repository: [matugen](https://archlinux.org/packages/extra/x86_64/matugen/) and
@@ -82,10 +85,13 @@ review those package pages again when refreshing this inventory.
 | Lazygit | [Upstream](https://github.com/jesseduffield/lazygit), signed Arch `extra/lazygit` | Full `pacman -Syu` | Automated; observed 0.66.2-1. |
 | Obsidian | [Vendor](https://obsidian.md/download), signed Arch [extra/obsidian](https://archlinux.org/packages/extra/x86_64/obsidian/) | Full `pacman -Syu` | Automated; observed 1.14.5-1, using Arch's electron43 dependency. App is proprietary; official repository does not mean open source. |
 | OBS Studio | [Upstream](https://obsproject.com/), signed Arch [extra/obs-studio](https://archlinux.org/packages/extra/x86_64/obs-studio/) | Full `pacman -Syu` | Automated; official package was flagged out-of-date on 2026-10-23, so refresh this source review before relying on a particular feature/version. Hyprland screen capture uses the existing PipeWire portal. |
-| Zen Browser | [Vendor downloads](https://zen-browser.app/download/), candidate [zen-browser-bin](https://aur.archlinux.org/packages/zen-browser-bin) | Review updated AUR recipe, rebuild and install via pacman | Installed and launch-tested in the older acceptance VM (`hexen-archinstall`); absent from the clean rehearsal VM (`hexen-rehearsal-20261027`). Requires the reviewed manual install there. |
-| 1Password | [Vendor Arch instructions](https://support.1password.com/install-linux/#arch-linux), candidate [1password](https://aur.archlinux.org/packages/1password) | Review updated AUR recipe and vendor signing key, rebuild | Installed manually in VM after checksum/signature/archive checks. Privileged helper details below; account integration pending. |
-| Zoom | [Vendor Arch package](https://zoom.us/download/linux), candidate [zoom](https://aur.archlinux.org/packages/zoom) | Review versioned AUR recipe and rebuild; vendor `pacman -U` is an alternative manual path | Installed manually in VM after checksum/archive checks; call devices and screen sharing still need live acceptance. Under Wayland, Zoom documents whole-desktop or whiteboard sharing; application-window sharing requires Xorg. |
-| Slack | [Vendor Linux instructions](https://slack.com/help/articles/212924728-Download-Slack-for-Linux--beta-), candidate [slack-desktop](https://aur.archlinux.org/packages/slack-desktop) | Review updated AUR recipe and rebuild | Installed manually in VM after checksum/archive checks. Repackages vendor Debian binary; Arch packaging is community maintained. |
+| Zed | [Upstream](https://zed.dev/), signed Arch [extra/zed](https://archlinux.org/packages/extra/x86_64/zed/) | Full `pacman -Syu` | Automated; checked 2026-10-28. Provides `/usr/bin/zeditor` and the `dev.zed.Zed` desktop entry. It opens in the clean VM, but its log records Vulkan adapter initialization failure and software-emulated llvmpipe. VM provisioning selects `vulkan-virtio`, but the VM's virtio video device has no 3D acceleration enabled. Select and verify a compatible provider on physical hardware; the VM GPU criterion remains open. |
+| Zen Browser | [Vendor downloads](https://zen-browser.app/download/), candidate [zen-browser-bin](https://aur.archlinux.org/packages/zen-browser-bin) | Review updated AUR recipe, rebuild and install via pacman | Installed in the older acceptance VM and clean rehearsal VM (`hexen-rehearsal-20261027`). On 2026-10-28 the clean VM built recipe commit `ff5b152a31356577936690ccd32599e851326b85` for 1.23.4b-1; its release archive passed SHA-256 verification. The package registers `zen.desktop` for HTTP/HTTPS. `xdg-open` launched a Google URL, and the live Hyprland client list showed the Google Search page in Zen. |
+| 1Password | [Vendor Arch instructions](https://support.1password.com/install-linux/#arch-linux), candidate [1password](https://aur.archlinux.org/packages/1password) | Review updated AUR recipe and vendor signing key, rebuild | Clean rehearsal VM built and installed 8.12.42-36 from pinned recipe `c384584bedaa1ffebd3939d03a52bf4ff48e2bff`; vendor signature and archive were checked. The launch created a Crash Reporter window instead of the welcome screen; investigate before accepting. GNOME keyring service is active. Account sign-in remains owner-only. |
+| Bitwarden Desktop | [Verified Flathub listing](https://flathub.org/en/apps/com.bitwarden.desktop), app ID `com.bitwarden.desktop` | `flatpak update` (separate from `pacman -Syu`; no automatic update schedule configured) | Automated system Flatpak install through the system `flathub` remote. Rehearsal VM installed version 2026.10.0 and opened its login screen without sign-in. Flatpak permissions include all devices, network, Wayland/X11, Secret Service, and specific browser/native-messaging paths; review upstream permissions on refresh. GNOME keyring and `libsecret` are installed and active. Vault setup and browser-extension integration remain owner-only and untested. |
+| Zoom | [Vendor Arch package](https://zoom.us/download/linux), candidate [zoom](https://aur.archlinux.org/packages/zoom) | Review versioned AUR recipe and rebuild; vendor `pacman -U` is an alternative manual path | Clean rehearsal VM built and installed 7.2.1-1 from pinned recipe `9cf1e9686715d0677db2eb4106c2d59aee6d7ca0`; source SHA-512 passed and the Zoom Workplace window opened. On the later unlocked visual check, a “Zoom quit unexpectedly” report was visible over the Workplace window; root cause is unresolved. Call devices and screen sharing still need live acceptance. Under Wayland, Zoom documents whole-desktop or whiteboard sharing; application-window sharing requires Xorg. |
+| Slack | [Vendor Linux instructions](https://slack.com/help/articles/212924728-Download-Slack-for-Linux--beta-), candidate [slack-desktop](https://aur.archlinux.org/packages/slack-desktop) | Review updated AUR recipe and rebuild | Clean rehearsal VM built and installed 4.52.182-1 from pinned recipe `67c43c14906ddc96749f3c9b682bd9f5894d7251`; source BLAKE2 checks passed and the Slack sign-in window opened. Repackages vendor Debian binary; Arch packaging is community maintained. |
+| Hyprmon | [Upstream](https://github.com/erans/hyprmon), pinned source build | Review pinned commit and Go module graph, then rebuild | Clean rehearsal VM built commit `32ad27f94f40fd0dd81f982cc8208bb615607202`; `go test ./...` passed and the Hexen Display settings entry opened Hyprmon in Ghostty. Applying/saving a monitor arrangement remains untested. |
 | LocalSend | [Official Linux downloads](https://localsend.org/download), official GitHub [1.18.2 x86_64 AppImage](https://github.com/localsend/localsend/releases/download/v1.18.2/LocalSend-1.18.2-linux-x86-64.AppImage) | Desktop role downloads the pinned release with SHA-256 verification | Installed in the VM from the official AppImage; its SHA-256 matched the recorded pin. Version, URL, and hash are in `ansible/roles/desktop/defaults/main.yml`. Upstream also lists `localsend-bin` from AUR; this setup uses the official AppImage and does not run AUR recipes. |
 
 LocalSend is not an official Arch repository package. The desktop role downloads
@@ -98,9 +104,12 @@ see the [ArchWiki LocalSend entry](https://wiki.archlinux.org/title/LocalSend).
 At the 2026-10-26 VM checkpoint, the refreshed official package databases
 contained Neovim, Lazygit, and Obsidian; the manual candidate packages were not
 in the official repositories. OBS Studio was added to the automatic official
-package role on 2026-10-27. No third-party pacman repository, Flatpak remote, AUR helper, or downloaded
-installer script has been added. A vendor public key was imported only into
-the VM build user's GPG keyring for source verification, as recorded below.
+package role on 2026-10-27. As of that checkpoint, no third-party pacman
+repository, Flatpak remote, AUR helper, or downloaded installer script had
+been added. The current Bitwarden addition uses the system Flathub remote; no
+AUR helper or downloaded installer script is used. A vendor public key was
+imported only into the VM build user's GPG keyring for source verification, as
+recorded below.
 
 ## AUR recipe inspection
 
@@ -327,9 +336,84 @@ build timestamps mean a fresh build can differ. Rebuild and review per target.
 Package manifests, transaction/integrity logs, and package diffs are under
 `/home/mcuomo/hexen-vm-recovery/`. Snapshot 4 precedes this installation.
 
-The existing browser/password shortcuts should become usable once GUI launch
-checks pass. Default-browser association and 1Password/Zen extension integration
-still need explicit configuration/acceptance. Account sign-in is owner-only.
+## Clean rehearsal VM application pass, 2026-10-28
+
+This pass targets `hexen-rehearsal-20261027`, not the historical VM above.
+Packages were built as `mcuomo`; official missing dependencies were installed
+through signed pacman repositories. No AUR helper, third-party pacman
+repository, or signature bypass was used. The owner created the GNOME keyring;
+`gnome-keyring-daemon.service` is active. No account was signed in.
+
+- `1password` 8.12.42-36, recipe commit
+  `c384584bedaa1ffebd3939d03a52bf4ff48e2bff`: the vendor source SHA-256 and
+  detached signature passed. The primary fingerprint was checked against
+  1Password's [published Arch instructions](https://support.1password.com/install-linux/).
+  Its package archive and install script were inspected before installation.
+  `pacman -Qkk` reports only the expected `BrowserSupport` group/permission
+  change (`root:onepassword`, mode 2755); both Electron sandbox helpers are
+  `root:root` mode 4755. `mcuomo` is not in the `onepassword` group. Launching
+  produced a Hyprland client titled `1Password Crash Reporter`, not the normal
+  app welcome screen; the app launch remains unaccepted and needs diagnosis.
+- `slack-desktop` 4.52.182-1, recipe commit
+  `67c43c14906ddc96749f3c9b682bd9f5894d7251`: both BLAKE2 source checks passed.
+  The archive has no install script; its root-owned Chromium sandbox is mode
+  4755. The Slack sign-in window opened. `pacman -Qkk` found no changed files.
+- `zoom` 7.2.1-1, recipe commit
+  `9cf1e9686715d0677db2eb4106c2d59aee6d7ca0`: its source SHA-512 passed. This
+  is Zoom's current Linux build in the [official release notes](https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222)
+  checked 2026-10-28; the listed 7.2.2 is macOS-only. The package has no install
+  script or special-permission files. The Zoom Workplace window opened, then a
+  “Zoom quit unexpectedly” report was visible over it on the later unlocked
+  check. `pacman -Qkk` found no changed files. The report's cause is unresolved;
+  camera, microphone, meeting and sharing are intentionally left for a
+  real-device acceptance pass.
+- Hyprmon commit `32ad27f94f40fd0dd81f982cc8208bb615607202` passed
+  `go test ./...`, built with Go 1.27.3, and opened in Ghostty from the Hexen
+  Display settings command. No monitor arrangement was applied or saved.
+- Zed 1.25.3-1 opens in the VM. Its log reports Vulkan adapter initialization
+  failure and selects software-emulated `llvmpipe`. The selected
+  `vulkan-virtio` package is installed, but the VM's virtio video device has no
+  3D acceleration configured. `pacman -Qkk` found no altered Zed files. The
+  GPU acceptance requirement remains open; do not infer physical GPU behavior
+  from this VM.
+- Zen 1.23.4b-1 is the default HTTP/HTTPS handler. The live Hyprland client list
+  showed `another test - Google Search — Zen Browser` after the Walker search
+  activation. Walker's app matching, `1+1` calculation and Google search result
+  were verified in the same VM.
+
+### Bitwarden Flathub follow-up, 2026-10-28
+
+The apps role added Arch `flatpak` 1:1.18.4-2, the system `flathub` remote, and
+`com.bitwarden.desktop` version 2026.10.0. Flathub identifies the listing as
+verified by Bitwarden Inc. An isolated apps-role run completed with
+`ok=4 changed=2 failed=0`; the second run completed with `ok=4 changed=0
+failed=0`. The app launched into its login screen and appeared as a mapped
+Hyprland window. No account was signed in and no vault was imported.
+
+The app metadata allows network and IPC, Wayland/X11 sockets, all devices, the
+Secret Service and specifically listed browser/native-messaging directories.
+Its Flatpak does not grant unrestricted home-directory access. The VM has
+`libsecret` 0.21.8.2-1 and GNOME keyring 1:51.1-1, with the user keyring service
+active. The app log could not create native-messaging sockets under the
+non-Flatpak Zen profile, so browser integration is not accepted by this pass.
+An autostart portal was also unavailable; no autostart was configured. The
+existing Zoom crash report was visible over the VM desktop; it was left alone.
+
+`pacman -Qkk` found zero altered files for Zoom, Slack, Zed and Zen; the sole
+1Password difference is the expected helper GID/mode from its install script.
+The installed local package archives and Hyprmon binary remain in the VM under
+`/home/mcuomo/build/hexen-manual-apps/` and `/home/mcuomo/.local/bin/`. These are
+unsigned local AUR builds; review and rebuild them for updates. Outstanding
+work: diagnose 1Password's crash-reporter window, resolve or scope Zed's GPU
+criterion, verify private browser and normal lock/reboot behavior, test
+Bitwarden browser integration on a supported browser profile, and run the clean
+provisioning zero-change check.
+
+The clean VM reports `zen.desktop` for HTTP/HTTPS after installing Zen as its
+only browser, and `xdg-open` started the browser with a test URL. Verify the
+default handler on machines that already have another browser installed.
+1Password/Zen extension integration still needs explicit configuration and
+acceptance. Account sign-in is owner-only.
 The [vendor custom-browser procedure](https://support.1password.com/additional-browsers/)
 and [Zen integration guide](https://docs.zen-browser.app/guides/1password) describe
 allowing `zen-bin`; no browser trust allowlist has been changed yet.

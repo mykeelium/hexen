@@ -70,8 +70,9 @@ ${network_summary}
 Ansible will ask for sudo authorization when required.
 
 It does not partition disks, change encryption, or install the manually reviewed
-Zen, 1Password, Zoom, and Slack packages. Keep this repository at its current
-path after provisioning because the desktop configuration links point here.
+Zen, 1Password, Zoom, and Slack packages. Bitwarden Desktop is installed by the
+apps role from Flathub. Keep this repository at its current path after
+provisioning because the desktop configuration links point here.
 EOF
 
 read -r -p 'Continue? [y/N] ' answer
@@ -94,7 +95,7 @@ case "$desktop_launcher" in
 esac
 
 if [[ $desktop_launcher == walker ]]; then
-  walker_packages=(walker elephant elephant-desktopapplications elephant-files elephant-runner elephant-calc elephant-providerlist)
+  walker_packages=(walker elephant elephant-desktopapplications elephant-files elephant-runner elephant-calc elephant-websearch elephant-providerlist)
   if ! pacman -Q "${walker_packages[@]}" >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 Walker was selected, but its reviewed manual packages are not installed.
@@ -124,6 +125,7 @@ export ANSIBLE_CONFIG="${repo_root}/ansible/ansible.cfg"
 extra_vars=(-e "desktop_user=${desktop_user} desktop_launcher=${desktop_launcher}")
 if [[ $vm_mode == true ]]; then
   extra_vars+=(-e desktop_libvirt_manage_default_network=false)
+  extra_vars+=(-e '{"desktop_vulkan_driver_packages":["vulkan-virtio"]}')
 fi
 
 ansible-galaxy collection install -r "${repo_root}/ansible/requirements.yml"
