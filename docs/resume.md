@@ -73,9 +73,23 @@ update. The VM has `/home/mcuomo/recovery` owned by root and mode 0755, with no
 desktop user before creating a log. The command now falls back to the existing
 private `~/.local/state/hexen/updates/checkpoints` area when the recovery parent
 cannot be written, and this fix was deployed to the VM with a private backup.
-It has not been exercised through an update run. The deployed command remains
-untracked in the VM checkout, so the updater's clean-checkout guard will stop a
-full update before any package transaction until the source is reconciled.
+The owner committed the
+current source as `a5dbca9`; on 2026-10-29 the VM checkout was synced to that
+commit from a verified Git bundle. Before syncing, the complete checkout was
+archived at
+`~/.local/state/hexen/updates/hexen-vm-before-a5dbca9-20261029T170220-07dfcc.tar.gz`.
+The VM checkout is now clean, the ignored
+`ansible/group_vars/all/local.yml` remains present, and the review command help
+works. No package transaction was started during the sync.
+
+On 2026-10-29, the owner retried the full update. It stopped in checkpoint
+`~/.local/state/hexen/updates/checkpoints/20261029T222442Z-14e57f3a` because
+`tar -C /boot` was run without privilege and could not open `/boot`. The log
+shows the failure occurred before the Snapper snapshot and Pacman; no package
+transaction started. The checkpoint is partial and must not be used as a
+recovery pair. The source now runs `sudo tar` with archive output streamed into
+a private user-owned file and uses `sudo find` for `/boot` hashes. This fix is
+pending commit and VM deployment.
 
 Bitwarden Desktop was added to the apps role from the Bitwarden-verified
 Flathub listing. In the rehearsal VM, Flatpak 1:1.18.4-2 and Bitwarden

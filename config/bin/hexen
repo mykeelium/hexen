@@ -1074,6 +1074,36 @@ def update_capture(argv: list[str], log: Path) -> subprocess.CompletedProcess[st
     return result
 
 
+def update_capture_archive(argv: list[str], output: Path, log: Path) -> None:
+    """Run a privileged archive producer into a private user-owned file."""
+    partial = output.with_name(output.name + ".partial")
+    if partial.is_symlink() or partial.exists() or output.is_symlink() or output.exists():
+        raise ConfigError(f"refusing to overwrite an existing boot archive path: {output}")
+    fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as archive:
+            fd = -1
+            update_log(log, "$ " + shlex.join(argv))
+            result = subprocess.run(argv, stdout=archive, stderr=subprocess.PIPE, check=False)
+            archive.flush()
+            os.fsync(archive.fileno())
+    finally:
+        if fd >= 0:
+            os.close(fd)
+    error = result.stderr.decode(errors="replace").strip()
+    if error:
+        update_log(log, error)
+    if result.returncode:
+        detail = error or f"exit status {result.returncode}"
+        raise ConfigError(f"command failed: {shlex.join(argv)}: {detail}")
+    os.replace(partial, output)
+    directory_fd = os.open(output.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def update_checkpoint_root() -> Path:
     home = Path.home()
     recovery = home / "recovery"
@@ -1340,8 +1370,8 @@ def command_update(vm_mode: bool = False) -> int:
             update_capture(["sudo", "btrfs", "subvolume", "list", "/"], log).stdout,
             encoding="utf-8",
         )
-        update_capture(["tar", "-C", "/boot", "-cpf", str(checkpoint / "boot.tar"), "."], log)
-        boot_hashes = update_capture(["find", "/boot", "-type", "f", "-exec", "sha256sum", "{}", "+"], log)
+        update_capture_archive(["sudo", "tar", "-C", "/boot", "-cpf", "-", "."], checkpoint / "boot.tar", log)
+        boot_hashes = update_capture(["sudo", "find", "/boot", "-type", "f", "-exec", "sha256sum", "{}", "+"], log)
         (checkpoint / "boot.sha256").write_text(boot_hashes.stdout, encoding="utf-8")
         archive_hash = update_capture(["sha256sum", str(checkpoint / "boot.tar")], log)
         (checkpoint / "boot.tar.sha256").write_text(archive_hash.stdout, encoding="utf-8")

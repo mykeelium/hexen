@@ -167,7 +167,9 @@ and resulting source revisions are recorded in `source-revisions.txt` for
 manual recovery.
 
 After that review, Hexen records package/mount/subvolume data, creates a Snapper
-root snapshot and matching `/boot` archive with checksums, and runs one
+root snapshot and matching `/boot` archive with checksums. It reads `/boot`
+through `sudo` and streams the archive into a private file owned by the logged-in
+user. It then runs one
 interactive `sudo pacman -Syu` transaction. It records before/after package
 manifests, `.pacnew`/`.pacsave` candidates, failed system units, and a limited
 kernel reboot signal. After a successful transaction and package manifest, it
