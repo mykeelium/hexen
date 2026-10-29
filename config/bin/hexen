@@ -1460,7 +1460,7 @@ def command_update(vm_mode: bool = False) -> int:
             update_log(log, f"Post-update migrations could not be inspected or run: {error}")
             print(f"Migrations could not be inspected or run: {error}")
         pacnew = update_capture(
-            ["find", "/etc", "-type", "f", "(", "-name", "*.pacnew", "-o", "-name", "*.pacsave", ")", "-print"],
+            ["sudo", "find", "/etc", "-type", "f", "(", "-name", "*.pacnew", "-o", "-name", "*.pacsave", ")", "-print"],
             log,
         )
         failed_units = update_capture(["systemctl", "--failed", "--no-legend", "--plain"], log)

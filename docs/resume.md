@@ -89,7 +89,9 @@ shows the failure occurred before the Snapper snapshot and Pacman; no package
 transaction started. The checkpoint is partial and must not be used as a
 recovery pair. The source now runs `sudo tar` with archive output streamed into
 a private user-owned file and uses `sudo find` for `/boot` hashes. This fix is
-pending commit and VM deployment.
+committed as `3b7f769` and deployed to the VM on 2026-10-29. The VM checkout is
+clean at that revision; `hexen update-monitor review --help` works, but the
+full update has not yet been retried with the fix.
 
 Bitwarden Desktop was added to the apps role from the Bitwarden-verified
 Flathub listing. In the rehearsal VM, Flatpak 1:1.18.4-2 and Bitwarden
