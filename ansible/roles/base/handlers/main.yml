@@ -3,6 +3,13 @@
   ansible.builtin.systemd_service:
     daemon_reload: true
 
+- name: Reload firewalld
+  ansible.builtin.command:
+    argv:
+      - firewall-cmd
+      - --reload
+  changed_when: true
+
 - name: Start generated zram swap device
   ansible.builtin.systemd_service:
     name: systemd-zram-setup@zram0.service

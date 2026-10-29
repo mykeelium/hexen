@@ -1,0 +1,5 @@
+---
+# No machine-specific software is selected until the machine inventory is known.
+base: []
+apps: []
+desktop: []

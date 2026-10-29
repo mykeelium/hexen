@@ -4,7 +4,11 @@
 
 - name: Install the reviewed desktop and editor dependencies
   community.general.pacman:
-    name: '{{ desktop_packages + desktop_vulkan_driver_packages + desktop_launcher_packages[desktop_launcher] }}'
+    name: >-
+      {{ (desktop_packages + desktop_vulkan_driver_packages +
+         desktop_launcher_packages[desktop_launcher] +
+         (hexen_profile_packages.desktop | default([])) +
+         (desktop_remote_access_packages if desktop_remote_access_enabled | bool else [])) | unique }}
     state: present
 
 - name: Install the pinned screensaver animation engine
@@ -345,7 +349,6 @@
     owner: '{{ _desktop_uid }}'
     group: '{{ _desktop_gid }}'
     mode: '0755'
-  when: desktop_launcher == 'walker'
 
 - name: Link the repo-owned Elephant user service
   ansible.builtin.file:
@@ -358,10 +361,31 @@
     follow: false
   when: desktop_launcher == 'walker'
 
+- name: Link the on-demand Hexen remote desktop user service
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/systemd/user/hexen-remote.service'
+    dest: '{{ _desktop_home }}/.config/systemd/user/hexen-remote.service'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+  when: desktop_remote_access_enabled | bool
+
 - name: Link the desktop helper
   ansible.builtin.file:
     src: '{{ desktop_repo_root }}/config/bin/hexen-desktop'
     dest: '{{ _desktop_home }}/.local/bin/hexen-desktop'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+
+- name: Link the Hexen command
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/bin/hexen'
+    dest: '{{ _desktop_home }}/.local/bin/hexen'
     state: link
     owner: '{{ _desktop_uid }}'
     group: '{{ _desktop_gid }}'
@@ -387,6 +411,17 @@
     group: '{{ _desktop_gid }}'
     force: false
     follow: false
+
+- name: Link the remote desktop helper
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/bin/hexen-remote'
+    dest: '{{ _desktop_home }}/.local/bin/hexen-remote'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+  when: desktop_remote_access_enabled | bool
 
 - name: Inspect active theme state
   ansible.builtin.stat:

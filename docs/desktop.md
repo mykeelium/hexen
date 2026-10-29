@@ -142,6 +142,11 @@ No additional pacman repository or AUR helper is added. Walker builds and
 updates stay manual; the setup only checks for the packages when Walker is
 selected.
 
+Remote desktop support is retained for possible later use, but is disabled by
+default: workstation setup does not install WayVNC or OpenSSH for this purpose,
+and it does not link the remote desktop helper or service. To opt a particular
+machine in later, follow the [remote desktop guide](remote-desktop.md).
+
 OBS Studio is installed from Arch's signed official `extra/obs-studio` package
 through the apps role; the package source review records that it was flagged
 out-of-date on 2026-10-23. This does not use AUR. The desktop role enables

@@ -28,18 +28,24 @@ cache.
 
 ## Firewall baseline
 
-Firewalld is the only workstation firewall manager in the base role. It starts
-at boot with the `drop` zone as the persistent and runtime default, with
-intra-zone forwarding disabled in that untrusted zone. The packaged `drop`
-zone enabled intra-zone forwarding in the rehearsal VM; the role now removes
-that exception. Firewalld documents that this setting permits forwarding
+Firewalld is the only workstation firewall manager in the base role. The role
+owns `/etc/firewalld/zones/drop.xml` and uses the `drop` zone as persistent and
+runtime default. Its target is `DROP`, with only the `dhcpv6-client` service
+allowed; it has no ports, rich rules, or intra-zone forwarding. The packaged
+zone had enabled forwarding, so Hexen replaces that definition with its
+reviewed local policy. Firewalld documents that zone forwarding permits traffic
 between interfaces or sources in one zone; see its official
 [zone documentation](https://firewalld.org/documentation/man-pages/firewalld.zone.html).
 The default drops unsolicited inbound traffic on new or unassigned
 NetworkManager profiles while allowing connections initiated by the workstation
-and their return traffic.
-Firewalld's built-in `allow-host-ipv6` policy retains the ICMPv6 needed to bring
-up IPv6. The baseline opens no host service such as SSH.
+and their return traffic. Firewalld's active `allow-host-ipv6` policy retains
+the ICMPv6 needed for IPv6 neighbor discovery and router advertisements. The
+baseline opens no host service such as SSH.
+
+The rehearsal VM accepted the XML, reported matching runtime and permanent
+drop-zone policy, and retained DNS and IPv4 HTTPS after reload. The VM has no
+IPv6 default route, so IPv6 internet behavior and inbound filtering still need
+external network tests.
 
 Check what is active before changing trust or opening a service:
 
@@ -51,18 +57,85 @@ sudo nft list ruleset
 sudo ss -lntup
 ```
 
+For a focused check of the default and effective interface policy, run:
+
+```sh
+sudo firewall-cmd --get-default-zone
+sudo firewall-cmd --get-active-zones
+sudo firewall-cmd --zone=drop --list-all
+sudo firewall-cmd --permanent --zone=drop --list-all
+sudo systemctl is-enabled firewalld
+sudo systemctl is-active firewalld
+```
+
+If the policy looks wrong, use a local console so a network change cannot cut
+off recovery. First inspect the repository-managed policy and current state;
+then restore the reviewed `ansible/roles/base/templates/firewalld-drop.xml.j2`
+to `/etc/firewalld/zones/drop.xml`, set `drop` as the permanent and runtime
+default, and reload firewalld:
+
+```sh
+sudo install -o root -g root -m 0644 /path/to/hexen/ansible/roles/base/templates/firewalld-drop.xml.j2 /etc/firewalld/zones/drop.xml
+sudo firewall-cmd --permanent --set-default-zone=drop
+sudo firewall-cmd --set-default-zone=drop
+sudo firewall-cmd --reload
+sudo firewall-cmd --zone=drop --list-all
+```
+
+Replace `/path/to/hexen` with the actual checkout path. The template is plain
+firewalld XML and can be installed directly. Do not stop firewalld as a
+recovery shortcut: that removes the host's inbound filtering. This procedure
+has not yet been exercised as a recovery test.
+
+To investigate dropped packets without enabling payload logging, inspect the
+kernel journal for firewalld/nftables messages and the current firewall
+counters. Do not add an unbounded logging rule as part of diagnosis:
+
+```sh
+sudo journalctl -b -u firewalld --no-pager
+sudo nft list ruleset
+```
+
+The baseline does not currently install a rate-limited drop-logging rule.
+Avoid logging packet payloads or forwarding firewall logs off the machine
+automatically.
+
 NetworkManager profile zones are persistent. Keep unknown/public connections in
 `drop`; assign a profile to a less restrictive zone only after inspecting that
 zone's services and confirming the network is trusted. For example, the stock
 `home` and `work` zones can allow SSH, so do not choose them without reviewing
 `firewall-cmd --info-zone home` or `--info-zone work`.
 
-This first baseline does not yet configure LocalSend, Windows/libvirt, Podman,
-or VPN exceptions. Those workflows need separate rehearsal tests before the
-firewall acceptance checklist is complete. Firewalld manages its own nftables
-table; do not flush nftables globally or disable rules owned by libvirt or
-containers. Review and resolve an existing UFW or standalone nftables service
-configuration before provisioning rather than running competing managers.
+The rehearsal VM does not have LocalSend installed. Its active and permanent
+`drop` zones contain no discovery ports, protocols, or rich rules, and the VM
+had no UDP listeners during inspection. This verifies that the untrusted
+profile has no LocalSend/discovery exception; there is no configured transfer
+workflow here to test. Do not add a broad multicast or port exception without
+selecting a concrete workflow and trusted NetworkManager profile.
+
+The VM has `openvpn` and `networkmanager-openvpn` installed but no VPN profile
+or provider configuration. Do not infer VPN or kill-switch behavior from the
+ordinary `drop` zone; validate route and DNS behavior only after a real profile
+is configured.
+
+On 2026-10-28, a temporary TCP listener bound to all VM IPv4 addresses on port
+49321. A connection attempt from the libvirt development host timed out, which
+is consistent with unsolicited inbound traffic being dropped. The listener and
+its temporary PID file were removed, and no listening sockets remained. This
+is only a local IPv4 smoke check: it does not establish external IPv4/IPv6
+filtering, a separate disposable peer, or VM forwarding behavior.
+
+The rehearsal VM's libvirt services are disabled and its persistent `default`
+network is inactive. Starting that network inside this VM would conflict with
+the VM's own `192.168.122.0/24` interface subnet, so guest DHCP, DNS, NAT, and
+isolation cannot be accepted in this nested setup. Podman 6.1.4 is installed
+and reports rootless mode with the `netavark` backend for the desktop user, but
+container connectivity and its firewall interaction have not been tested.
+Those workflows need separate rehearsal tests before the firewall acceptance
+checklist is complete. Firewalld manages its own nftables table; do not flush
+nftables globally or disable rules owned by libvirt or containers. Review and
+resolve an existing UFW or standalone nftables service configuration before
+provisioning rather than running competing managers.
 
 ## Backups and hardware maintenance
 

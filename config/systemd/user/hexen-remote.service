@@ -1,0 +1,14 @@
+[Unit]
+Description=Hexen on-demand remote view of the current Wayland session
+Documentation=https://github.com/any1/wayvnc
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wayvnc --desktop 127.0.0.1:5900
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+# Deliberately not enabled: start only when remote access is needed.

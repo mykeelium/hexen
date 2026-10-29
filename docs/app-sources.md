@@ -353,7 +353,13 @@ repository, or signature bypass was used. The owner created the GNOME keyring;
   change (`root:onepassword`, mode 2755); both Electron sandbox helpers are
   `root:root` mode 4755. `mcuomo` is not in the `onepassword` group. Launching
   produced a Hyprland client titled `1Password Crash Reporter`, not the normal
-  app welcome screen; the app launch remains unaccepted and needs diagnosis.
+  app welcome screen. A later launch with Chromium GPU acceleration disabled
+  (`--disable-gpu`) reached the normal `Welcome — 1Password` window. This is
+  evidence of a VM graphics-path interaction, not proof of the exact crash
+  cause; the VM has no accelerated virtio GPU. Keep software rendering as a
+  diagnostic workaround only, and verify the normal launch path on hardware.
+  No account was signed in. The app's native integration also wrote its normal
+  browser messaging manifests during launch.
 - `slack-desktop` 4.52.182-1, recipe commit
   `67c43c14906ddc96749f3c9b682bd9f5894d7251`: both BLAKE2 source checks passed.
   The archive has no install script; its root-owned Chromium sandbox is mode
@@ -364,9 +370,9 @@ repository, or signature bypass was used. The owner created the GNOME keyring;
   checked 2026-10-28; the listed 7.2.2 is macOS-only. The package has no install
   script or special-permission files. The Zoom Workplace window opened, then a
   “Zoom quit unexpectedly” report was visible over it on the later unlocked
-  check. `pacman -Qkk` found no changed files. The report's cause is unresolved;
-  camera, microphone, meeting and sharing are intentionally left for a
-  real-device acceptance pass.
+  check. A Zoom Workplace window is currently running after the earlier crash,
+  but the crash cause remains unresolved; camera, microphone, meeting and
+  sharing are intentionally left for a real-device acceptance pass.
 - Hyprmon commit `32ad27f94f40fd0dd81f982cc8208bb615607202` passed
   `go test ./...`, built with Go 1.27.3, and opened in Ghostty from the Hexen
   Display settings command. No monitor arrangement was applied or saved.
@@ -397,21 +403,33 @@ Its Flatpak does not grant unrestricted home-directory access. The VM has
 active. The app log could not create native-messaging sockets under the
 non-Flatpak Zen profile, so browser integration is not accepted by this pass.
 An autostart portal was also unavailable; no autostart was configured. The
-existing Zoom crash report was visible over the VM desktop; it was left alone.
+VM's Zoom crash record was left intact. During a later diagnostic pass,
+1Password's earlier crash reporter was closed and the app was relaunched with
+`--disable-gpu`; it reached its normal welcome window. This narrowed the issue
+to the VM graphics path but did not prove the underlying cause. Zoom's saved
+crash metadata records SIGSEGV in its own process while calling GLib's
+`g_spawn_command_line_sync`; a later Workplace window is running, but the
+initial crash has not been explained.
 
 `pacman -Qkk` found zero altered files for Zoom, Slack, Zed and Zen; the sole
 1Password difference is the expected helper GID/mode from its install script.
 The installed local package archives and Hyprmon binary remain in the VM under
 `/home/mcuomo/build/hexen-manual-apps/` and `/home/mcuomo/.local/bin/`. These are
 unsigned local AUR builds; review and rebuild them for updates. Outstanding
-work: diagnose 1Password's crash-reporter window, resolve or scope Zed's GPU
-criterion, verify private browser and normal lock/reboot behavior, test
-Bitwarden browser integration on a supported browser profile, and run the clean
-provisioning zero-change check.
+work: test 1Password's normal GPU-enabled launch on hardware, resolve or scope
+Zed's GPU criterion, exercise the browser keybindings and private-session
+behavior, test normal lock/reboot behavior, test Bitwarden browser integration
+on a supported browser profile, and run the clean provisioning zero-change
+check.
 
 The clean VM reports `zen.desktop` for HTTP/HTTPS after installing Zen as its
 only browser, and `xdg-open` started the browser with a test URL. Verify the
 default handler on machines that already have another browser installed.
+On 2026-10-28, the deployed `hexen-desktop browser-private` helper opened a
+`Zen Browser Private Browsing` window alongside the existing normal Zen window.
+Hyprland reports both Browser and Private browser bindings loaded. This verifies
+the helper and target application; an actual physical keypress and private
+session browsing behavior remain untested.
 1Password/Zen extension integration still needs explicit configuration and
 acceptance. Account sign-in is owner-only.
 The [vendor custom-browser procedure](https://support.1password.com/additional-browsers/)

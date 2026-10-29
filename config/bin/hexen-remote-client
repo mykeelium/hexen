@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  printf 'Usage: %s <ssh-destination>\n' "${0##*/}" >&2
+  printf 'Example: %s mcuomo@hexen-desktop\n' "${0##*/}" >&2
+}
+
+if [[ $# -ne 1 || -z "$1" || "$1" == -* || "$1" =~ [[:space:]] ]]; then
+  usage
+  exit 2
+fi
+
+destination=$1
+viewer=${HEXEN_REMOTE_VIEWER:-remote-viewer}
+ssh_config=${HEXEN_SSH_CONFIG:-}
+if [[ -z "$ssh_config" ]]; then
+  repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+  local_ssh_config=$repository_root/.local/remote-ssh.conf
+  if [[ -f "$local_ssh_config" ]]; then
+    ssh_config=$local_ssh_config
+  fi
+fi
+ssh_options=()
+if [[ -n "$ssh_config" ]]; then
+  ssh_options=(-F "$ssh_config")
+fi
+for command_name in ssh python3 "$viewer"; do
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    printf 'hexen-remote-client: required command not found: %s\n' "$command_name" >&2
+    exit 1
+  fi
+done
+
+control_dir=$(mktemp -d /tmp/hexen-remote.XXXXXX)
+control_socket=$control_dir/control
+server_started=false
+tunnel_started=false
+
+cleanup() {
+  local exit_status=$?
+  trap - EXIT INT TERM
+
+  if [[ "$server_started" == true ]]; then
+    ssh "${ssh_options[@]}" -S "$control_socket" "$destination" '$HOME/.local/bin/hexen-remote stop' >/dev/null 2>&1 || true
+  fi
+  if [[ "$tunnel_started" == true ]]; then
+    ssh "${ssh_options[@]}" -S "$control_socket" -O exit "$destination" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$control_dir"
+  exit "$exit_status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+local_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+
+# Keep one authenticated SSH connection for server control and the VNC tunnel.
+ssh "${ssh_options[@]}" -M -S "$control_socket" -o ExitOnForwardFailure=yes -f -N \
+  -L "127.0.0.1:${local_port}:127.0.0.1:5900" "$destination"
+tunnel_started=true
+
+server_started=true
+ssh "${ssh_options[@]}" -S "$control_socket" "$destination" '$HOME/.local/bin/hexen-remote start'
+
+printf 'Opening the Hexen desktop from %s through SSH. Close the viewer to disconnect.\n' "$destination"
+"$viewer" "vnc://127.0.0.1:${local_port}"

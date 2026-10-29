@@ -1,6 +1,9 @@
 # Machine-local VM access and agent working files; never part of an install.
 /.local/
 
+# Optional machine-specific firewall source ranges.
+/ansible/group_vars/all/local.yml
+
 # Optional per-machine compositor overrides.
 /config/hypr/local.lua
 

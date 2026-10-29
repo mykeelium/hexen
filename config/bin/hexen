@@ -1,0 +1,483 @@
+#!/usr/bin/env python3
+"""Inspect the Hexen repository and its managed desktop links."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROFILE_RE = re.compile(r"^hexen_machine_profile:\s*([^\s#]+)")
+REMOTE_RE = re.compile(r"^desktop_remote_access_enabled:\s*(true|false)\s*(?:#.*)?$", re.I)
+PROFILES = {"common", "numen", "arcana"}
+CONFIG_DIRS = [
+    "hypr", "ghostty", "mako", "xdg-desktop-portal", "nvim", "lazydocker",
+    "elephant", "starship.toml",
+]
+HELPERS = ["hexen", "hexen-desktop", "hexen-theme", "hexen-screensaver"]
+
+
+class ConfigError(Exception):
+    pass
+
+
+def repo_git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "--no-pager", "-C", str(REPO_ROOT), *args],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "GIT_PAGER": "cat", "PAGER": "cat"},
+    )
+
+
+def local_setting(pattern: re.Pattern[str], default: str) -> str:
+    path = REPO_ROOT / "ansible/group_vars/all/local.yml"
+    if not path.exists():
+        return default
+    if path.is_symlink() or not path.is_file():
+        raise ConfigError(f"refusing to read unsafe local settings path: {path}")
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = pattern.match(line)
+        if match:
+            return match.group(1).strip("'\"")
+    return default
+
+
+def expected_links(home: Path) -> dict[Path, Path]:
+    config = home / ".config"
+    expected = {config / name: REPO_ROOT / "config" / name for name in CONFIG_DIRS}
+
+    launcher = "walker"
+    launcher_file = config / "hexen/launcher"
+    if launcher_file.is_file() and not launcher_file.is_symlink():
+        configured = launcher_file.read_text(encoding="utf-8").splitlines()
+        if configured:
+            launcher = configured[0].strip()
+    if launcher not in {"walker", "fuzzel"}:
+        raise ConfigError(f"unknown installed launcher in {launcher_file}: {launcher!r}")
+    if launcher == "fuzzel":
+        expected[config / "fuzzel"] = REPO_ROOT / "config/fuzzel"
+
+    for name, files in {
+        "waybar": ["config.jsonc", "style.css"],
+        "walker": ["config.toml", "themes/hexen/style.css"],
+    }.items():
+        for relative in files:
+            expected[config / name / relative] = REPO_ROOT / "config" / name / relative
+
+    for name in HELPERS:
+        expected[home / ".local/bin" / name] = REPO_ROOT / "config/bin" / name
+    expected[home / ".local/share/applications/hexen-themes.desktop"] = (
+        REPO_ROOT / "config/applications/hexen-themes.desktop"
+    )
+    expected[home / ".local/share/applications/hexen-theme-builder.desktop"] = (
+        REPO_ROOT / "config/applications/hexen-theme-builder.desktop"
+    )
+
+    if launcher == "walker":
+        expected[config / "systemd/user/hexen-elephant.service"] = (
+            REPO_ROOT / "config/systemd/user/hexen-elephant.service"
+        )
+    if local_setting(REMOTE_RE, "false").lower() == "true":
+        expected[home / ".local/bin/hexen-remote"] = REPO_ROOT / "config/bin/hexen-remote"
+        expected[config / "systemd/user/hexen-remote.service"] = (
+            REPO_ROOT / "config/systemd/user/hexen-remote.service"
+        )
+    return expected
+
+
+def command_status() -> int:
+    profile = local_setting(PROFILE_RE, "common")
+    if profile not in PROFILES:
+        raise ConfigError(f"unknown machine profile in local.yml: {profile!r}")
+
+    revision = repo_git("rev-parse", "--short", "HEAD")
+    if revision.returncode:
+        raise ConfigError(revision.stderr.strip() or "cannot read repository revision")
+    dirty = repo_git("status", "--short", "--untracked-files=normal")
+    if dirty.returncode:
+        raise ConfigError(dirty.stderr.strip() or "cannot read repository status")
+
+    print(f"Profile: {profile}")
+    print(f"Repository: {revision.stdout.strip()} ({'dirty' if dirty.stdout else 'clean'})")
+    if dirty.stdout:
+        print("Repository changes:")
+        for line in dirty.stdout.splitlines():
+            print(f"  {line}")
+
+    print("Managed desktop links:")
+    problems = 0
+    for destination, source in sorted(expected_links(Path.home()).items()):
+        label = destination.relative_to(Path.home())
+        if not destination.is_symlink():
+            if destination.exists():
+                print(f"  UNEXPECTED regular path: {label}")
+            else:
+                print(f"  MISSING: {label}")
+            problems += 1
+            continue
+        actual = destination.resolve(strict=False)
+        wanted = source.resolve(strict=False)
+        if actual != wanted:
+            print(f"  UNEXPECTED target: {label} -> {destination.readlink()}")
+            problems += 1
+        else:
+            print(f"  OK: {label}")
+    return 1 if problems else 0
+
+
+def command_diff() -> int:
+    status = repo_git("status", "--short", "--untracked-files=normal")
+    if status.returncode:
+        raise ConfigError(status.stderr.strip() or "cannot read repository status")
+    print("Repository changes:")
+    print(status.stdout.rstrip() if status.stdout else "  clean")
+
+    for title, args in (
+        ("Staged changes", ("diff", "--cached", "--no-ext-diff")),
+        ("Unstaged changes", ("diff", "--no-ext-diff")),
+    ):
+        result = repo_git(*args)
+        if result.returncode:
+            raise ConfigError(result.stderr.strip() or f"cannot show {title.lower()}")
+        print(f"\n{title}:")
+        print(result.stdout.rstrip() if result.stdout else "  none")
+
+    untracked = repo_git("ls-files", "--others", "--exclude-standard", "-z")
+    if untracked.returncode:
+        raise ConfigError(untracked.stderr.strip() or "cannot list untracked repository files")
+    print("\nUntracked file contents:")
+    paths = [path for path in untracked.stdout.split("\0") if path]
+    if not paths:
+        print("  none")
+    for relative in paths:
+        path = REPO_ROOT / relative
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(REPO_ROOT):
+            print(f"  skipped unsafe or non-regular path: {relative}")
+            continue
+        result = subprocess.run(
+            ["git", "--no-pager", "-C", str(REPO_ROOT), "diff", "--no-index",
+             "--no-ext-diff", "--", "/dev/null", str(path)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env={**os.environ, "GIT_PAGER": "cat", "PAGER": "cat"},
+        )
+        if result.returncode not in {0, 1}:
+            raise ConfigError(result.stderr.strip() or f"cannot show untracked file: {relative}")
+        print(result.stdout.rstrip() or f"  {relative}: no text diff available")
+    return 0
+
+
+def command_apply(vm_mode: bool) -> int:
+    provisioner = REPO_ROOT / "install/provision.sh"
+    if provisioner.is_symlink() or not provisioner.is_file() or not os.access(provisioner, os.X_OK):
+        raise ConfigError(f"checked provisioner is missing or unsafe: {provisioner}")
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ConfigError("config apply requires an interactive terminal")
+
+    profile = local_setting(PROFILE_RE, "common")
+    if profile not in PROFILES:
+        raise ConfigError(f"unknown machine profile in local.yml: {profile!r}")
+    mode = "VM" if vm_mode else "workstation"
+    revision = repo_git("rev-parse", "--short", "HEAD")
+    if revision.returncode:
+        raise ConfigError(revision.stderr.strip() or "cannot read repository revision")
+    changes = repo_git("status", "--short", "--untracked-files=normal")
+    if changes.returncode:
+        raise ConfigError(changes.stderr.strip() or "cannot read repository status")
+
+    print(f"Configuration target: {mode}")
+    print(f"Machine profile: {profile}")
+    print(f"Source revision: {revision.stdout.strip()} ({'dirty' if changes.stdout else 'clean'})")
+    if changes.stdout:
+        print("Working-tree changes that the provisioner will use:")
+        for line in changes.stdout.splitlines():
+            print(f"  {line}")
+    print("The provisioner will show its impact summary and ask before applying.")
+    print("Use Ctrl+C to stop before or during the interactive process.\n")
+    command = [str(provisioner)]
+    if vm_mode:
+        command.append("--vm")
+    return subprocess.run(command, cwd=REPO_ROOT, check=False).returncode
+
+
+BACKUP_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{8}$")
+
+
+def backup_root(create: bool = True) -> Path:
+    home = Path.home()
+    state_home = Path(os.environ.get("XDG_STATE_HOME", home / ".local/state")).expanduser()
+    if not state_home.is_absolute() or state_home.resolve(strict=False) != state_home:
+        raise ConfigError("XDG_STATE_HOME must be absolute and contain no symlinked components")
+    root = state_home / "hexen/backups/config"
+    for parent in (state_home, state_home / "hexen", state_home / "hexen/backups", root):
+        if parent.is_symlink():
+            raise ConfigError(f"refusing to use symlinked backup directory: {parent}")
+        if parent.exists() and not parent.is_dir():
+            raise ConfigError(f"backup path is not a directory: {parent}")
+    if create:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    elif not root.is_dir():
+        raise ConfigError(f"no config backups found under: {root}")
+    info = root.stat()
+    if info.st_uid != os.getuid():
+        raise ConfigError(f"backup directory is not owned by this user: {root}")
+    if create:
+        root.chmod(0o700)
+    elif info.st_mode & 0o077:
+        raise ConfigError(f"backup directory is accessible by other users: {root}")
+    return root
+
+
+def backup_source(value: str) -> tuple[Path, str]:
+    home = Path.home()
+    supplied = Path(value).expanduser()
+    if supplied.is_absolute():
+        candidate = supplied
+    elif supplied.parts and supplied.parts[0] == "config":
+        candidate = REPO_ROOT / supplied
+    elif supplied.parts and supplied.parts[0] == ".config":
+        candidate = home / supplied
+    else:
+        candidate = home / ".config" / supplied
+
+    repo_config = REPO_ROOT / "config"
+    home_config = home / ".config"
+    if home_config.is_symlink():
+        raise ConfigError(f"refusing to back up through a symlinked config root: {home_config}")
+    if not candidate.exists() and not candidate.is_symlink():
+        raise ConfigError(f"config path does not exist: {candidate}")
+    resolved = candidate.resolve(strict=True)
+    if resolved == repo_config or resolved == home_config:
+        raise ConfigError("back up a file or subdirectory inside config/, not the entire root")
+    if resolved.is_relative_to(repo_config):
+        origin = "repo:" + resolved.relative_to(REPO_ROOT).as_posix()
+    elif resolved.is_relative_to(home_config):
+        origin = "home:" + resolved.relative_to(home).as_posix()
+    else:
+        raise ConfigError("backup source must resolve inside the repository config/ or ~/.config/")
+    if not (resolved.is_file() or resolved.is_dir()):
+        raise ConfigError(f"backup source must be a regular file or directory: {resolved}")
+    return resolved, origin
+
+
+def command_backup(value: str) -> int:
+    source, origin = backup_source(value)
+    root = backup_root()
+    backup_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(4)
+    destination = root / backup_id
+    if destination.exists() or destination.is_symlink():
+        raise ConfigError(f"backup ID already exists; refusing to replace it: {backup_id}")
+    stage = Path(tempfile.mkdtemp(prefix=".pending-", dir=root))
+    try:
+        payload = stage / "payload"
+        if source.is_dir():
+            shutil.copytree(source, payload, symlinks=True, copy_function=shutil.copy2)
+            kind = "directory"
+        else:
+            shutil.copy2(source, payload)
+            kind = "file"
+        manifest = {
+            "version": 1,
+            "id": backup_id,
+            "source": origin,
+            "kind": kind,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        manifest_path = stage / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        manifest_path.chmod(0o600)
+        stage.chmod(0o700)
+        os.replace(stage, destination)
+    except BaseException:
+        shutil.rmtree(stage, ignore_errors=True)
+        raise
+    print(f"Backup created: {backup_id}")
+    print(f"Source: {origin}")
+    print(f"Stored under: {destination}")
+    return 0
+
+
+def backup_target(source: str) -> Path:
+    home = Path.home()
+    if source.startswith("repo:"):
+        relative = Path(source.removeprefix("repo:"))
+        root = REPO_ROOT / "config"
+    elif source.startswith("home:"):
+        relative = Path(source.removeprefix("home:"))
+        root = home / ".config"
+    else:
+        raise ConfigError("backup manifest has an unknown source domain")
+    if relative.is_absolute() or not relative.parts or any(part in {".", ".."} for part in relative.parts):
+        raise ConfigError("backup manifest contains an unsafe destination path")
+    if source.startswith("repo:") and relative.parts[0] != "config":
+        raise ConfigError("repository backup destination is outside config/")
+    if source.startswith("home:") and relative.parts[0] != ".config":
+        raise ConfigError("home backup destination is outside ~/.config/")
+    target = REPO_ROOT / relative if source.startswith("repo:") else home / relative
+    if root.is_symlink():
+        raise ConfigError(f"refusing to restore through a symlinked config root: {root}")
+    if not target.resolve(strict=False).is_relative_to(root.resolve(strict=False)):
+        raise ConfigError("backup destination resolves outside its allowed config tree")
+    parent = target.parent
+    while parent != root.parent:
+        if parent.is_symlink():
+            raise ConfigError(f"refusing to restore through a symlinked parent: {parent}")
+        if parent.exists() and not parent.is_dir():
+            raise ConfigError(f"restore parent is not a directory: {parent}")
+        if parent == root:
+            break
+        parent = parent.parent
+    if not root.is_dir():
+        raise ConfigError(f"restore config root is missing: {root}")
+    if not target.parent.is_dir():
+        raise ConfigError(f"restore parent directory is missing: {target.parent}")
+    return target
+
+
+def read_backup(backup_id: str) -> tuple[Path, dict, Path]:
+    if not BACKUP_ID_RE.fullmatch(backup_id):
+        raise ConfigError("backup ID has an invalid format")
+    root = backup_root(create=False)
+    directory = root / backup_id
+    if directory.is_symlink() or not directory.is_dir():
+        raise ConfigError(f"backup does not exist or is not a directory: {backup_id}")
+    info = directory.stat()
+    if info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise ConfigError(f"backup directory is not private and user-owned: {backup_id}")
+    manifest_path = directory / "manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ConfigError("backup manifest is missing or unsafe")
+    manifest_info = manifest_path.stat()
+    if manifest_info.st_uid != os.getuid() or manifest_info.st_mode & 0o077:
+        raise ConfigError("backup manifest is not private and user-owned")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ConfigError(f"cannot read backup manifest: {error}") from error
+    if not isinstance(manifest, dict) or manifest.get("version") != 1 or manifest.get("id") != backup_id:
+        raise ConfigError("backup manifest has an unsupported version or ID")
+    if manifest.get("kind") not in {"file", "directory"} or not isinstance(manifest.get("source"), str):
+        raise ConfigError("backup manifest has invalid source metadata")
+    payload = directory / "payload"
+    if payload.is_symlink():
+        raise ConfigError("backup payload must not be a symlink")
+    if manifest["kind"] == "file" and not payload.is_file():
+        raise ConfigError("backup payload is not a regular file")
+    if manifest["kind"] == "directory" and not payload.is_dir():
+        raise ConfigError("backup payload is not a directory")
+    return directory, manifest, payload
+
+
+def copy_backup_payload(payload: Path, kind: str, target: Path) -> None:
+    stage = Path(tempfile.mkdtemp(prefix=f".hexen-restore-{secrets.token_hex(4)}-", dir=target.parent))
+    staged = stage / "payload"
+    try:
+        if kind == "directory":
+            shutil.copytree(payload, staged, symlinks=True, copy_function=shutil.copy2)
+            if target.exists():
+                previous = stage / "previous"
+                moved_previous = False
+                try:
+                    os.replace(target, previous)
+                    moved_previous = True
+                    os.replace(staged, target)
+                except BaseException:
+                    if moved_previous and previous.exists() and not target.exists():
+                        os.replace(previous, target)
+                    raise
+                shutil.rmtree(previous)
+            else:
+                os.replace(staged, target)
+        else:
+            shutil.copy2(payload, staged)
+            os.replace(staged, target)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
+def command_restore(backup_id: str) -> int:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ConfigError("config restore requires an interactive terminal")
+    _, manifest, payload = read_backup(backup_id)
+    target = backup_target(manifest["source"])
+    if target.is_symlink():
+        raise ConfigError(f"refusing to replace a symlink at restore destination: {target}")
+    target_exists = target.exists()
+    if target_exists and manifest["kind"] == "file" and not target.is_file():
+        raise ConfigError("backup is a file but the restore destination is not a regular file")
+    if target_exists and manifest["kind"] == "directory" and not target.is_dir():
+        raise ConfigError("backup is a directory but the restore destination is not a directory")
+
+    print(f"Backup: {backup_id}")
+    print(f"Restore destination: {target}")
+    if target_exists:
+        print("The existing destination will first be copied to a new safety backup.")
+    try:
+        answer = input("Restore this config? [y/N] ").strip().lower()
+    except EOFError as error:
+        raise ConfigError("confirmation input closed; nothing was restored") from error
+    if answer not in {"y", "yes"}:
+        print("Restore cancelled.")
+        return 0
+
+    if target_exists:
+        command_backup(str(target))
+    copy_backup_payload(payload, manifest["kind"], target)
+    if target_exists:
+        print("The previous destination is preserved in the safety backup created above.")
+    print("Restore complete.")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="hexen", description="Hexen workstation tools")
+    groups = parser.add_subparsers(dest="group", required=True)
+    config = groups.add_parser("config", help="inspect managed configuration")
+    config_commands = config.add_subparsers(dest="command", required=True)
+    config_commands.add_parser("status", help="show profile, repo state, and managed links")
+    config_commands.add_parser("diff", help="show staged and unstaged repository edits")
+    apply = config_commands.add_parser("apply", help="review and apply workstation configuration")
+    apply.add_argument("--vm", action="store_true", help="use the nested-VM network settings")
+    backup = config_commands.add_parser("backup", help="copy a config path into private Hexen state")
+    backup.add_argument("path", help="path under config/ or ~/.config/ (relative paths default to ~/.config)")
+    restore = config_commands.add_parser("restore", help="restore an identified backup after confirmation")
+    restore.add_argument("backup_id", help="ID printed by hexen config backup")
+    args = parser.parse_args()
+
+    try:
+        if args.group == "config" and args.command == "status":
+            return command_status()
+        if args.group == "config" and args.command == "diff":
+            return command_diff()
+        if args.group == "config" and args.command == "apply":
+            return command_apply(args.vm)
+        if args.group == "config" and args.command == "backup":
+            return command_backup(args.path)
+        if args.group == "config" and args.command == "restore":
+            return command_restore(args.backup_id)
+    except KeyboardInterrupt:
+        print("hexen: interrupted; no further changes will be made", file=sys.stderr)
+        return 130
+    except (ConfigError, OSError, UnicodeError) as error:
+        print(f"hexen: {error}", file=sys.stderr)
+        return 2
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

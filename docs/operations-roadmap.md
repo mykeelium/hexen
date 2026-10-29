@@ -44,7 +44,10 @@ These are the current blockers to wiping the work computer.
   and matching `/boot` archive, install an actually newer kernel, reboot, unlock,
   and confirm Limine, initramfs, NetworkManager, audio, desktop, and the
   provisioner's zero-change rerun. Reinstalling the same package is useful
-  evidence, but is not a substitute for this newer-kernel transition.
+  evidence, but is not a substitute for this newer-kernel transition. On
+  2026-10-28 the VM's repository had no newer kernel queued, and Arch's official
+  [`linux` package page](https://archlinux.org/packages/core/x86_64/linux/)
+  listed the same `7.2.11.arch1-1` version as installed in the VM.
 - [ ] **Complete the laptop hardware inventory and live acceptance.** Identify
   GPU, Wi-Fi, Bluetooth, storage controller, firmware/UEFI behavior, camera,
   display layout/scaling, keyboard, touchpad, brightness keys, and suspend/resume.
@@ -95,9 +98,13 @@ These are the current blockers to wiping the work computer.
   their inspected local packages. Slack displayed its sign-in screen and Zoom
   initially displayed its Workplace window; no account was signed in. During
   the later unlocked visual check, a Zoom “quit unexpectedly” report appeared
-  over the Workplace window. The 1Password
-  launch presented its Crash Reporter window instead of its normal welcome
-  screen; the cause still needs investigation. The GNOME keyring service is
+  over the Workplace window. Its saved crash record shows SIGSEGV in Zoom while
+  calling GLib's spawn helper; a Workplace window currently runs after relaunch,
+  but the cause is unresolved. The 1Password launch first presented its Crash
+  Reporter window. A later diagnostic launch with `--disable-gpu` reached the
+  normal welcome window, which suggests a VM graphics-path interaction but
+  does not prove the cause. Verify normal GPU-enabled launch on hardware. The
+  GNOME keyring service is
   active, and the user created the keyring. `pacman -Qkk` found no changed files
   in Zoom, Slack, Zed, or Zen; 1Password's only difference is its expected
   BrowserSupport group/mode change from its reviewed install script.
@@ -107,19 +114,30 @@ These are the current blockers to wiping the work computer.
   software-emulated llvmpipe rather than using the selected `vulkan-virtio`
   driver; the VM's virtio video has no 3D acceleration enabled. Resolve or
   explicitly scope this VM limitation before accepting the Zed GPU criterion.
-  App launch evidence does not complete the application gate: investigate the
-  1Password launch, resolve Zed's Vulkan acceptance, verify Walker's normal and
-  private browser shortcuts, and complete the account-free post-reboot checks.
+  App launch evidence does not complete the application gate: verify the
+  1Password normal GPU-enabled launch, resolve Zed's Vulkan acceptance, verify
+  Walker's normal and private browser shortcuts, and complete the account-free
+  post-reboot checks. The deployed private-browser helper opened a Zen private
+  window and Hyprland reports the browser bindings loaded; the actual keypress
+  and private browsing behavior remain untested. See the app-source notes.
   Bitwarden Desktop 2026.10.0 was installed from the Bitwarden-verified Flathub
   listing; its login screen opened without sign-in. The second apps-role run
   reported zero changes. Its Flatpak permissions and keyring availability were
   inspected; native messaging with Zen remains unverified.
 - [ ] **Converge the VM onto one reviewed source revision.** Reconcile the
   VM-local lock-screen change with the development checkout, review the pending
-  desktop/Starship changes, and deploy a recorded Git checkpoint. Confirm the
-  installed launcher, helpers, configuration links, and theme outputs match it.
-  Reboot, test login and normal lock/unlock, launch the required applications,
-  check audio/capture, and require a zero-change provisioning rerun. Keep each
+  desktop/Starship changes, and deploy a recorded Git checkpoint. On 2026-10-28
+  both checkouts advanced to `382de1c`; the former VM branch and its pre-deploy
+  diff are retained in the VM recovery directory. Lock-screen, Walker, Starship,
+  Waybar, and desktop-helper sources match the host checkout. The VM selects
+  Walker, its managed config links resolve into `/home/mcuomo/hexen`, its active
+  generated theme is `gruvbox-dark`, and Elephant is active. The full VM-mode
+  Ansible playbook ran twice with `changed=0`, `failed=0`; PipeWire and
+  WirePlumber are active and no failed system units were reported. A normal
+  reboot, login and lock/unlock check, required-app launch checks, and audio or
+  capture acceptance remain. VM-mode provisioning disables nested libvirt
+  network management because its default `192.168.122.0/24` overlaps the VM's
+  own `enp1s0` subnet; this VM has not accepted guest networking. Keep each
   machine's deployment separate so VM provisioning cannot alter the host.
 - [ ] **Accept the maintenance and firewall baseline below.** Package presence
   alone does not complete this gate: prove the configured services, firewall
@@ -163,12 +181,14 @@ Physical-device acceptance remains deferred until the hardware phase.
   section. The 2026-10-28 VM audit found firewalld active/enabled, nftables and
   UFW services inactive, `drop` as both defaults, and `enp1s0` in the active
   `drop` zone. No listening sockets were reported. It also found the packaged
-  `drop` zone had intra-zone forwarding enabled; the base role now disables it
-  in both runtime and permanent configuration. The targeted role run changed
-  both settings; a second run reported zero changes. Runtime and permanent
-  queries now both report `forward=no`, and outbound HTTPS still returned HTTP
-  200. Custom zone ownership, VM/VPN forwarding, trusted-profile behavior, and
-  external IPv4/IPv6 probes remain unaccepted.
+  `drop` zone had intra-zone forwarding enabled; the base role now owns a local
+  fail-closed zone definition that does not enable it. The targeted Ansible run
+  installed the policy and reloaded firewalld; a second run reported
+  `changed=0`. Runtime and permanent queries both report target `DROP`, only
+  `dhcpv6-client`, and `forward=no`; the built-in IPv6 host policy is active,
+  and DNS plus IPv4 HTTPS still work. The VM has no IPv6 default route. Custom
+  trust mapping, VM/VPN forwarding, trusted-profile behavior, and external
+  IPv4/IPv6 probes remain unaccepted.
 - [ ] **Accept `fwupd` for firmware maintenance.** The package is declared; no
   firmware update is run automatically. Inspect supported devices and available
   firmware on the physical machine. Document the update/recovery procedure;
@@ -202,56 +222,125 @@ Physical-device acceptance remains deferred until the hardware phase.
 ## Priority 0: implement and accept a robust workstation firewall
 
 The initial VM audit found nftables installed but no firewall policy loaded.
-Firewalld now runs and owns an nftables table with the default `drop` zone, and
-intra-zone forwarding is disabled in that zone. The required result is a
-persistent, tested workstation policy, with network exceptions documented by
-purpose and scope. VM acceptance comes first; the target laptop's network and
-hardware checks can follow later.
+Firewalld now runs and owns an nftables table with a repository-managed `drop`
+zone as default. Its untrusted policy has no intra-zone forwarding. Remaining
+work is to bind any trust to selected NetworkManager profiles, define scoped
+workflow exceptions after those profiles are known, and test from another
+machine. VM acceptance comes first; the target laptop's network and hardware
+checks can follow later.
 
-- [ ] **Define the baseline and its ownership.** Manage repository-owned
-  firewalld zones/policies declaratively. Deny unsolicited inbound traffic on
-  untrusted networks for IPv4 and IPv6, allow established/related traffic and
-  ordinary outbound client use, and restrict forwarding to explicitly required
-  VM/container networks. Keep loopback and essential DHCP, DNS responses,
-  ICMP/ICMPv6, and IPv6 neighbor-discovery behavior functional. Inspect effective
-  service allowances rather than assuming a named default zone is sufficient;
+- [x] **Define the baseline and its ownership.** The base role owns the
+  `/etc/firewalld/zones/drop.xml` policy. It uses target `DROP`, permits only
+  `dhcpv6-client`, and defines no ports, rich rules, or intra-zone forwarding.
+  Runtime and permanent VM state match, firewalld's `allow-host-ipv6` policy is
+  active, and DNS plus IPv4 HTTPS remained functional after reload. External
+  IPv4/IPv6 filtering is still covered by the separate cross-machine test below.
+  The baseline denies unsolicited inbound traffic for IPv4 and IPv6, allows
+  established/related traffic and ordinary outbound client use, and restricts
+  forwarding to explicitly required VM/container networks. Keep loopback and
+  essential DHCP, DNS responses, ICMP/ICMPv6, and IPv6 neighbor-discovery
+  behavior functional. Inspect effective service allowances rather than
+  assuming a named default zone is sufficient;
   inbound SSH and other remote-management services require an explicit need.
 - [ ] **Bind trust to NetworkManager connection profiles.** New or unknown
   networks must use the untrusted policy. Assign trusted LAN exceptions only
   to owner-selected connections; do not trust every private-address subnet.
   Verify Ethernet/Wi-Fi changes, reconnects, renamed interfaces, and firewall
-  restarts. See [NetworkManager/firewalld zone assignment](https://firewalld.org/documentation/zone/connections-interfaces-and-sources.html).
+  restarts. The 2026-10-28 VM check found its saved wired profile has no explicit
+  zone, while active `enp1s0` uses the default `drop` zone; no trusted exception
+  is assigned. Firewalld is enabled and active. There is no Wi-Fi profile in
+  this VM; reconnect and renamed-interface behavior remain untested. See
+  [NetworkManager/firewalld zone assignment](https://firewalld.org/documentation/zone/connections-interfaces-and-sources.html).
 - [ ] **Scope LocalSend and discovery exceptions.** Record the actual discovery
   and transfer requirements, allow them on selected trusted networks, and test
   transfers in both directions. Verify they remain unavailable through the
-  untrusted profile; avoid a broad all-ports or all-multicast exception.
+  untrusted profile; avoid a broad all-ports or all-multicast exception. The VM
+  has no LocalSend package or UDP listeners, and the untrusted zone has no
+  discovery allowances. This confirms the current fail-closed behavior; keep
+  transfer acceptance open until a concrete workflow and trusted profile are
+  selected.
 - [ ] **Preserve isolated virtualization networking.** Validate libvirt guest
   DHCP/DNS, outbound NAT, and the Windows lab's required isolation. Scope host
   service allowances to the virtual bridge and required services, keep guests
   off the physical work LAN unless deliberately configured, and test rootless
   Podman separately. Preserve libvirt-managed networking rules; do not flush
   unrelated tables to apply the workstation policy. See [libvirt firewall integration](https://libvirt.org/firewall.html).
+  The rehearsal VM's libvirt services are disabled and its default network is
+  inactive; starting it would overlap the VM's own `192.168.122.0/24` subnet.
+  Podman reports rootless mode with `netavark`, but container connectivity has
+  not been exercised. DHCP/DNS/NAT/isolation and container firewall behavior
+  remain open for a non-nested VM or the physical machine.
 - [ ] **Accept VPN behavior deliberately.** Test OpenVPN connection,
   disconnection, reconnect, DNS, IPv4/IPv6 routes, and interaction with LAN/VM
   exceptions. Define whether an optional VPN kill switch is needed and what it
   protects; a normal workstation firewall is not proof of a kill switch or
-  leak-free VPN routing.
+  leak-free VPN routing. On 2026-10-28 the VM had `openvpn` and
+  `networkmanager-openvpn` installed but no VPN connection profile; no provider
+  configuration or credentials are present, so connection and kill-switch
+  behavior cannot be tested here.
 - [ ] **Prove persistence and repeatability.** Enable the firewall for boot,
   verify the policy is effective after reboot and reload, and reconcile runtime
   versus permanent rules. A second provisioning run must make zero changes.
   Missing service/policy, unexpected zone membership, or unintended listening
-  services must be visible in the readiness report.
+  services must be visible in the readiness report. Firewalld is enabled and
+  active in the VM. After a reload on 2026-10-28, runtime and permanent defaults
+  were both `drop`, both policies allowed only `dhcpv6-client` with forwarding
+  disabled, and HTTPS to archlinux.org returned 200. Two earlier full VM-mode
+  provisioning runs reported zero changes; post-reboot policy verification
+  remains open because reboot requires unlocking the encrypted VM at its
+  console.
 - [ ] **Test from another disposable machine.** Verify expected allowed and
   blocked connections over both IPv4 and IPv6, including unsolicited inbound
   traffic and VM forwarding. Also test browsing, package downloads, DNS/NTP,
   LocalSend, VPN use, and required meeting/capture workflows. Record expected
   results and observed results; a local connectivity test alone is insufficient.
+  On 2026-10-28 a temporary listener on the VM's IPv4 interface timed out when
+  probed from the development host; it was stopped and no listener remained.
+  This preliminary local-peer check is consistent with inbound filtering, but
+  the required separate disposable peer, IPv6, forwarding, and workflow tests
+  remain open.
 - [ ] **Document diagnostics and local-console recovery.** Provide commands to
   inspect zones, effective rules, listeners, and rate-limited local drop logs.
   Keep logs bounded and avoid recording payloads or uploading them automatically.
   Back up the known-working policy and test restoring it from a local console.
   A failed rule deployment must report failure and retain or restore the last
-  working policy rather than silently opening the firewall.
+  working policy rather than silently opening the firewall. Diagnostics and a
+  local-console recovery procedure are now documented in
+  [`maintenance`](maintenance.md); the recovery procedure has not been exercised,
+  and the baseline intentionally has no drop-logging rule yet.
+
+## Deferred: opt-in remote control of the active desktop
+
+- [ ] **Deploy and accept the SSH-tunneled WayVNC workflow.** The code, helper,
+  and [guide](remote-desktop.md) are retained, but workstation provisioning
+  leaves remote access disabled by default. When explicitly opted in,
+  provisioning installs OpenSSH and WayVNC and links the on-demand
+  `hexen-remote start|stop|status` helper and user service. The
+  `hexen-remote-client <ssh-destination>` command starts the service over SSH,
+  creates the tunnel, opens the viewer, and cleans up when it closes. WayVNC
+  binds to loopback and is never started automatically. The guide covers SSH
+  key setup, host-key verification, and a firewall exception scoped to the
+  remote client's source address; `sshd` and firewall access still require
+  deliberate setup. A separate Hyprland compositor launched over SSH could
+  not acquire a seat.
+
+  Rehearsal evidence: in the active logged-in session, the one-command wrapper
+  started WayVNC, opened the SSH tunnel, received 1280x800 framebuffer metadata,
+  sent pointer input, and stopped WayVNC and the tunnel when the test viewer
+  exited. A real viewer also connected and remote pointer input moved the VM
+  cursor. Rendered pixels, lock-screen access, and multi-monitor behavior remain
+  unverified, so keep this gate open.
+
+  Parked VM state (2026-10-29): `sshd` is disabled and inactive; its permanent
+  and runtime firewalld exception was removed; the ignored source override is
+  empty. No listener is bound to port 22. The VM checkout, helper, service,
+  host-key pin, key, client alias, and installed WayVNC package remain as
+  rehearsal artifacts for later reactivation. Revalidate before reactivating.
+
+  Before acceptance, confirm the client sees the intended display layout, can
+  open its own applications and files, can connect to the lock screen, and loses
+  access when the WayVNC service is stopped. Do not add a public VNC listener or
+  enable SSH automatically.
 
 ## Priority 1: make configuration changes easy to manage and distribute
 
@@ -260,35 +349,47 @@ desktop role links files from the clone, so editing a linked file edits the
 repository copy. Git history is the distribution mechanism. The missing part is
 a clear day-to-day workflow and explicit machine profiles.
 
-- [ ] **Keep one source of truth initially.** Continue using this Git repo for
+- [x] **Keep one source of truth initially.** This Git repo holds the
   Archinstall notes, Ansible roles, common desktop configs, themes, scripts, and
-  docs. Use Ansible for system packages/services and deployment; use Git for
-  reviewing and distributing edits. Avoid introducing a second dotfile engine
-  until the current workflow has a demonstrated limitation.
-- [ ] **Define profile layering.** Establish a documented precedence such as
-  `common` → `numen` or `arcana` → ignored local override. Keep the user's
-  requested inclusive core in common, put actual hardware-specific choices in
-  the machine profile, and keep credentials and private machine data outside
-  Git. Start with monitor/GPU/input/network settings and package differences;
-  do not duplicate whole config trees when a small override is enough.
-- [ ] **Add a Hexen config command group.** A small `hexen config` interface
-  should provide:
-  - `status`: show selected machine profile, repository revision/dirty state,
-    and links that are missing or point somewhere unexpected.
-  - `diff`: show local repository edits before sharing or updating.
-  - `apply`: run the checked Ansible configuration path with a clear preview,
-    retaining its current refusal to overwrite unmanaged user files.
-  - `backup` or `restore`: copy a config aside before a deliberate migration or
-    replacement. Never silently overwrite a user's edit.
-- [ ] **Document the edit-and-share loop.** Make it explicit: edit through the
-  linked config or in the repo, inspect `git diff`, validate the relevant config,
-  commit, then update the other machine from the reviewed Git revision. Keep
-  machine-local files ignored and provide examples of which settings belong in
-  common versus a host profile.
-- [ ] **Evaluate chezmoi only if scope grows.** Chezmoi is worth reconsidering if
-  the project expands to many home-directory files, multiple operating systems,
-  or templated secret handling. For the current Arch-only setup, adding it now
-  would duplicate Ansible/Git responsibilities without solving a proven gap.
+  docs. Ansible manages system packages/services and deploys configuration;
+  Git reviews and distributes edits. The current setup has no second dotfile
+  engine, so retain this model unless the workflow demonstrates a limitation.
+- [x] **Define software profile layering.** Shared packages remain common;
+  selected `common`, `numen`, or `arcana` profiles can add packages, followed
+  by ignored per-machine package additions. The tracked profile lists are empty
+  until software differences are chosen. Credentials remain outside Git. See
+  [`machine profiles`](machine-profiles.md).
+- [ ] **Add hardware profile settings.** After identifying the machines, add
+  monitor/GPU/input/network choices as small overrides instead of duplicating
+  common config trees. Keep these settings and private machine data out of the
+  common layer; validate them on the actual hardware.
+- [x] **Add `hexen config status` and `diff`.** These read-only commands report
+  the selected profile, repository revision/dirty state, managed desktop links,
+  and staged, unstaged, or untracked repository edits. See
+  [`machine profiles`](machine-profiles.md).
+- [x] **Add `hexen config apply`.** It delegates to the existing interactive
+  provisioner, which shows its impact summary, asks before proceeding, checks
+  Ansible syntax, and retains the desktop role's unmanaged-file protections.
+  `--vm` forwards the nested-VM network mode.
+- [x] **Add `hexen config backup`.** It makes a new private, timestamped copy
+  of a file or directory under `~/.config/` or the repository's `config/` tree.
+  It refuses paths outside those trees and never replaces an existing backup.
+- [x] **Add safe config restore.** It accepts only an identified backup,
+  requires interactive confirmation, restricts the destination to the original
+  config tree, and creates a safety backup before replacing an existing path.
+  Symlinked destinations and type mismatches are refused.
+- [x] **Document the edit-and-share loop.** The machine profile guide now
+  covers editing through links or in the repository, reviewing staged/unstaged
+  and untracked changes, validating the relevant config, staging only reviewed
+  files, committing, and fast-forwarding another machine to the reviewed
+  revision. It also distinguishes common settings, tracked profile package
+  additions, and ignored machine-local values.
+- [x] **Keep Git and Ansible as the config workflow for now; defer chezmoi.**
+  This remains an Arch-only setup with Ansible-managed system configuration and
+  Git-managed desktop files. The current scope has not demonstrated a need for
+  another dotfile engine. Reconsider only if the project grows to many more
+  home-directory files, multiple operating systems, or templated secret
+  handling.
 
 ## Priority 1: add opt-in YubiKey authentication
 
@@ -433,6 +534,13 @@ build AUR packages or run unreviewed remote scripts.
   checksums, AUR recipes, and out-of-date official package flags before
   changing their automation. Keep pinned third-party builds manual until the
   review/update path is reproducible and trusted.
+- [ ] **Harden and refine remote desktop later.** After the current SSH-tunneled
+  WayVNC workflow is fully accepted, revisit it as a separate quality pass:
+  verify the rendered image, lock/unlock behavior, multiple monitors, reconnects
+  after network or suspend changes, and cleanup after client or server crashes.
+  Improve the client command's status and error messages, document host-key and
+  firewall changes, and decide whether a dedicated desktop-client package or
+  menu entry is useful. Keep VNC loopback-only and remote access opt-in.
 
 ## Suggested delivery order
 

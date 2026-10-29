@@ -1,0 +1,3 @@
+---
+# Optional machine-local source CIDRs allowed to use SSH through the drop zone.
+base_firewall_ssh_sources: []

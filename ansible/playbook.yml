@@ -2,6 +2,69 @@
 - name: Configure this Arch Linux workstation
   hosts: localhost
   become: true
+  vars:
+    # Inventory group_vars, including the ignored local.yml, may override these.
+    hexen_machine_profile: common
+    hexen_profile_local_overrides: {}
+  pre_tasks:
+    - name: Validate the selected Hexen software profile
+      ansible.builtin.assert:
+        that:
+          - hexen_machine_profile in ['common', 'numen', 'arcana']
+        fail_msg: >-
+          hexen_machine_profile must be one of common, numen, or arcana.
+
+    - name: Validate private Hexen profile package additions
+      ansible.builtin.assert:
+        that:
+          - (hexen_profile_local_overrides | default({})) is mapping
+          - >-
+            (hexen_profile_local_overrides | default({})).keys()
+            | difference(['base', 'apps', 'desktop']) | length == 0
+          - >-
+            (hexen_profile_local_overrides | default({})).values()
+            | select('sequence') | list | length ==
+            (hexen_profile_local_overrides | default({})).values() | list | length
+          - >-
+            (hexen_profile_local_overrides | default({})).values()
+            | select('string') | list | length == 0
+          - >-
+            (hexen_profile_local_overrides | default({})).values()
+            | select('mapping') | list | length == 0
+        fail_msg: >-
+          hexen_profile_local_overrides may contain only base, apps, and desktop
+          lists in the ignored local.yml file.
+
+    - name: Load the selected Hexen software profile
+      ansible.builtin.include_vars:
+        file: '{{ playbook_dir }}/profiles/{{ hexen_machine_profile }}.yml'
+        name: hexen_selected_profile
+
+    - name: Validate the selected profile package lists
+      ansible.builtin.assert:
+        that:
+          - hexen_selected_profile is mapping
+          - >-
+            hexen_selected_profile.keys()
+            | difference(['base', 'apps', 'desktop']) | length == 0
+          - hexen_selected_profile.keys() | list | length == 3
+          - >-
+            hexen_selected_profile.values() | select('sequence') | list | length == 3
+          - >-
+            hexen_selected_profile.values() | select('string') | list | length == 0
+          - >-
+            hexen_selected_profile.values() | select('mapping') | list | length == 0
+        fail_msg: >-
+          The selected software profile must define base, apps, and desktop
+          package lists.
+
+    - name: Combine selected profile and private package additions
+      ansible.builtin.set_fact:
+        hexen_profile_packages: >-
+          {{ {'base': [], 'apps': [], 'desktop': []}
+             | combine(hexen_selected_profile, recursive=true, list_merge='append')
+             | combine(hexen_profile_local_overrides | default({}), recursive=true, list_merge='append') }}
+
   roles:
     - boot
     - base

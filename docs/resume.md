@@ -26,10 +26,15 @@ The clean-VM app pass installed Zoom 7.2.1-1 and Slack 4.52.182-1. Slack reached
 its sign-in screen without account sign-in. Zoom opened its Workplace window,
 but a later unlocked visual check found a “Zoom quit unexpectedly” report over
 it. 1Password 8.12.42-36 passed its vendor signature and package checks, but
-its launch opened a Crash Reporter window. Zed opens, but logs show Vulkan
-adapter initialization failed and it selected software llvmpipe despite
-`vulkan-virtio` being installed. The VM's virtio video device has 3D
-acceleration disabled. These issues keep the application gate open. Hyprmon at
+its launch opened a Crash Reporter window. A later diagnostic launch with
+`--disable-gpu` reached the normal 1Password welcome window, suggesting a VM
+graphics-path interaction; the VM has no accelerated virtio GPU. The normal
+GPU-enabled launch still needs hardware verification. Zoom also has a recorded
+SIGSEGV from its first run, though a Workplace window is running after relaunch;
+its cause is unresolved. Zed logs show Vulkan adapter initialization failed
+and it selected software llvmpipe despite `vulkan-virtio` being installed. The
+VM's virtio video device has 3D acceleration disabled. These issues keep the
+application gate open. Hyprmon at
 commit `32ad27f94f40fd0dd81f982cc8208bb615607202` passed `go test ./...`, built,
 and opened through the Display settings Ghostty command; its apply/save keys
 have not been exercised.
@@ -46,13 +51,26 @@ successfully and remains an open browser-integration check. See
 The 2026-10-28 maintenance audit accepted `pacman-contrib` in the rehearsal VM:
 its weekly timer is active, the packaged `paccache -r` retains the default
 three versions, and the dry run found no eligible entries. The documented
-preview command was fixed to `paccache --dryrun --keep 3`. Firewalld is active
-with persistent/runtime `drop` defaults and no listening sockets, but its
-packaged drop zone enabled intra-zone forwarding. The base role now disables
-that forwarding in both runtime and permanent state; its second targeted run
-reported zero changes and outbound HTTPS still worked. Broader profile,
-virtualization, VPN, and external-connectivity firewall acceptance remains open.
-See [`operations roadmap`](operations-roadmap.md).
+preview command was fixed to `paccache --dryrun --keep 3`. The base role now
+owns `/etc/firewalld/zones/drop.xml`: target `DROP`, only `dhcpv6-client`, and
+no ports, rich rules, or intra-zone forwarding. In the rehearsal VM, runtime
+and permanent policy matched; `allow-host-ipv6` was active, DNS resolved, and
+IPv4 HTTPS returned HTTP 200 after reload. The targeted Ansible rerun reported
+`changed=0`. The VM has no IPv6 default route. Trusted-profile, LocalSend,
+libvirt, VPN, and external IPv4/IPv6 acceptance remains open. See
+[`operations roadmap`](operations-roadmap.md).
+
+On 2026-10-28 the rehearsal VM advanced to the host's recorded source checkpoint
+`382de1c`; its previous branch and uncommitted source diff were preserved under
+`/home/mcuomo/hexen-vm-recovery/`. Lock-screen, Walker, Starship, Waybar, and
+desktop-helper source files match the host checkout. Walker is the selected
+launcher, managed links resolve into `/home/mcuomo/hexen`, and `hexen-theme
+current` reports `gruvbox-dark`. The VM-mode full Ansible playbook completed
+twice with `changed=0` and `failed=0`. PipeWire and WirePlumber are active. The
+VM's `192.168.122.0/24` interface overlaps libvirt's packaged default NAT
+network, so VM-mode provisioning leaves nested network management disabled;
+guest DHCP/NAT and external firewall probes remain unaccepted. Normal reboot,
+login/lock, application, and audio/capture checks are also still open.
 
 Snapper cleanup passed its rehearsal check: the timer is active and the installed
 7-day/10-and-5 policy matches the source. A disposable three-snapshot `number`
@@ -145,7 +163,10 @@ archive restored; kernel/initramfs/EFI checksums and package manifest matched.
 Snapper listed snapshot 1 and created snapshot 2 after the successful restored
 boot. See `docs/recovery.md` for commands, scope, and evidence.
 
-`pacman -Syu` found no newer packages. Reinstalling current official `linux` and
+`pacman -Syu` found no newer packages. On 2026-10-28, Arch's official
+[`linux` package page](https://archlinux.org/packages/core/x86_64/linux/)
+listed `7.2.11.arch1-1`, the same kernel version installed in the VM.
+Reinstalling current official `linux` and
 `limine` exercised the actual initramfs rebuild and EFI copy hooks, followed by
 a successful reboot. Optional `qat_6xxx` firmware warning was recorded. An
 actual transition to a newer kernel remains untested.

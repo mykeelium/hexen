@@ -113,6 +113,25 @@
     follow: false
   register: _desktop_podman_socket_link
 
+- name: Inspect the Hexen remote desktop user service
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/systemd/user/hexen-remote.service'
+    follow: false
+  register: _desktop_remote_service
+  when: desktop_remote_access_enabled | bool
+
+- name: Preserve an unmanaged Hexen remote desktop service
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_remote_service.stat.exists and not (_desktop_remote_service.stat.islnk | default(false))) or
+        ((_desktop_remote_service.stat.islnk | default(false)) and
+         _desktop_remote_service.stat.lnk_source == desktop_repo_root ~ '/config/systemd/user/hexen-remote.service')
+    fail_msg: >-
+      Desktop preflight: refusing to replace an unmanaged user service at
+      {{ _desktop_home }}/.config/systemd/user/hexen-remote.service.
+  when: desktop_remote_access_enabled | bool
+
 - name: Preserve an unmanaged Podman user socket enablement link
   ansible.builtin.assert:
     that:
@@ -481,6 +500,21 @@
     path: '{{ _desktop_home }}/.local/bin/hexen-desktop'
     follow: false
   register: _desktop_helper
+
+- name: Inspect Hexen command destination
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.local/bin/hexen'
+    follow: false
+  register: _desktop_hexen_command
+
+- name: Preserve an existing unmanaged Hexen command
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_hexen_command.stat.exists and not (_desktop_hexen_command.stat.islnk | default(false))) or
+        ((_desktop_hexen_command.stat.islnk | default(false)) and
+         _desktop_hexen_command.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen')
+    fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen command.'
 
 - name: Preserve an existing unmanaged desktop helper
   ansible.builtin.assert:

@@ -1,7 +1,7 @@
 ---
 - name: Install base packages from official repositories
   ansible.builtin.package:
-    name: "{{ base_packages }}"
+    name: "{{ (base_packages + (hexen_profile_packages.base | default([]))) | unique }}"
     state: present
 
 - name: Inspect competing firewall service activity
@@ -45,6 +45,18 @@
       enabled. Review and reconcile its rules before enabling firewalld. No
       firewall service was changed by this role.
 
+- name: Install the repository-owned fail-closed drop zone
+  ansible.builtin.template:
+    src: firewalld-drop.xml.j2
+    dest: /etc/firewalld/zones/drop.xml
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload firewalld
+  tags:
+    - base_firewall_policy
+    - base_firewall_forward
+
 - name: Read persistent firewalld default zone before starting services
   ansible.builtin.command:
     argv:
@@ -83,54 +95,6 @@
       - "--set-default-zone={{ base_firewall_default_zone }}"
   when: base_firewall_runtime_zone.stdout != base_firewall_default_zone
   changed_when: true
-
-- name: Inspect persistent intra-zone forwarding in the untrusted default zone
-  ansible.builtin.command:
-    argv:
-      - firewall-cmd
-      - --permanent
-      - "--zone={{ base_firewall_default_zone }}"
-      - --query-forward
-  register: base_firewall_permanent_forward
-  changed_when: false
-  failed_when: base_firewall_permanent_forward.rc not in [0, 1]
-  tags:
-    - base_firewall_forward
-
-- name: Disable persistent intra-zone forwarding in the untrusted default zone
-  ansible.builtin.command:
-    argv:
-      - firewall-cmd
-      - --permanent
-      - "--zone={{ base_firewall_default_zone }}"
-      - --remove-forward
-  when: base_firewall_permanent_forward.rc == 0
-  changed_when: true
-  tags:
-    - base_firewall_forward
-
-- name: Inspect runtime intra-zone forwarding in the untrusted default zone
-  ansible.builtin.command:
-    argv:
-      - firewall-cmd
-      - "--zone={{ base_firewall_default_zone }}"
-      - --query-forward
-  register: base_firewall_runtime_forward
-  changed_when: false
-  failed_when: base_firewall_runtime_forward.rc not in [0, 1]
-  tags:
-    - base_firewall_forward
-
-- name: Disable runtime intra-zone forwarding in the untrusted default zone
-  ansible.builtin.command:
-    argv:
-      - firewall-cmd
-      - "--zone={{ base_firewall_default_zone }}"
-      - --remove-forward
-  when: base_firewall_runtime_forward.rc == 0
-  changed_when: true
-  tags:
-    - base_firewall_forward
 
 - name: Install zram generator configuration
   ansible.builtin.template:

@@ -1,7 +1,7 @@
 ---
 - name: Install reviewed applications from the official Arch repositories
   community.general.pacman:
-    name: '{{ apps_packages }}'
+    name: '{{ (apps_packages + (hexen_profile_packages.apps | default([]))) | unique }}'
     state: present
 
 - name: Add the Flathub system remote

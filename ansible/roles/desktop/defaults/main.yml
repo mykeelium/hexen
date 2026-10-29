@@ -2,6 +2,10 @@
 # Supply desktop_user explicitly; never guess that root is the desktop account.
 desktop_repo_root: '{{ playbook_dir | dirname }}'
 desktop_launcher: walker
+desktop_remote_access_enabled: false
+desktop_remote_access_packages:
+  - openssh
+  - wayvnc
 desktop_xdg_state_home: '{{ _desktop_home }}/.local/state'
 desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker, elephant, starship.toml]
 desktop_launcher_config_dirs:

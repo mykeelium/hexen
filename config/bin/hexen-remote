@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: hexen-remote {start|stop|status}
+
+Start or stop an SSH-tunneled VNC server for the current Hexen desktop session.
+The server listens only on 127.0.0.1 and is never enabled at login.
+See docs/remote-desktop.md for SSH and firewall setup.
+EOF
+}
+
+case "${1:-}" in
+  start)
+    runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    export XDG_RUNTIME_DIR="$runtime_dir"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$runtime_dir/bus}"
+    if ! systemctl --user show-environment | grep -q '^WAYLAND_DISPLAY=' ||
+       ! systemctl --user show-environment | grep -q '^HYPRLAND_INSTANCE_SIGNATURE='; then
+      printf '%s\n' 'hexen-remote: no active Hexen graphical session was found.' >&2
+      exit 1
+    fi
+    systemctl --user daemon-reload
+    systemctl --user start hexen-remote.service
+    systemctl --user --no-pager --full status hexen-remote.service
+    ;;
+  stop)
+    runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    export XDG_RUNTIME_DIR="$runtime_dir"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$runtime_dir/bus}"
+    systemctl --user daemon-reload
+    systemctl --user stop hexen-remote.service
+    ;;
+  status)
+    runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    export XDG_RUNTIME_DIR="$runtime_dir"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$runtime_dir/bus}"
+    systemctl --user daemon-reload
+    systemctl --user --no-pager --full status hexen-remote.service
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

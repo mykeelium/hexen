@@ -113,6 +113,8 @@ The entrypoint supplies the invoking regular user's name explicitly. The desktop
 role installs LocalSend from an upstream AppImage pinned by SHA-256; it does not
 install the four manually reviewed applications. Follow
 [`install/manual-apps/README.md`](../install/manual-apps/README.md) separately.
+Machine software profile selection and ignored per-machine package additions are
+documented in [`docs/machine-profiles.md`](../docs/machine-profiles.md).
 The base role installs the OpenVPN client; the desktop role adds its NetworkManager
 plugin and the virt-manager/QEMU/KVM host stack. It enables modular libvirt
 sockets and starts the packaged default NAT network. The desktop account is not

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="DROP">
+  <short>Hexen Untrusted</short>
+  <description>Drop unsolicited inbound traffic on untrusted networks while allowing outbound client connections and their replies.</description>
+  <service name="dhcpv6-client"/>
+{% for source in base_firewall_ssh_sources %}
+  <rule family="{{ 'ipv6' if ':' in source else 'ipv4' }}">
+    <source address="{{ source }}"/>
+    <service name="ssh"/>
+    <accept/>
+  </rule>
+{% endfor %}
+</zone>
