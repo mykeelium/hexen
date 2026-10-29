@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: install/provision.sh [--vm] [--help]
+Usage: install/provision.sh [--vm] [--review] [--help]
 
 Provision this Arch Linux installation with the repository's system and desktop
 configuration. Run it as the account that should own the desktop configuration,
@@ -11,13 +11,16 @@ not as root. It does not partition disks or run Archinstall.
 
 --vm leaves libvirt's default network unmanaged to avoid a nested NAT subnet
 collision. It still provisions the desktop, libvirt sockets, and storage pool.
+--review runs Ansible check mode with diffs, then asks separately before applying.
 EOF
 }
 
 vm_mode=false
+review_mode=false
 while (( $# )); do
   case "$1" in
     --vm) vm_mode=true ;;
+    --review) review_mode=true ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -80,6 +83,9 @@ case "$answer" in
   y|Y|yes|YES) ;;
   *)
     printf 'Provisioning cancelled.\n'
+    if [[ $review_mode == true ]]; then
+      exit 3
+    fi
     exit 0
     ;;
 esac
@@ -133,6 +139,23 @@ ansible-playbook --syntax-check \
   -i "${repo_root}/ansible/inventory/localhost.yml" \
   "${repo_root}/ansible/playbook.yml" \
   "${extra_vars[@]}"
+if [[ $review_mode == true ]]; then
+  printf '\nRunning Ansible check mode with diffs. This is an advisory preview: command-based tasks may be skipped or may not predict their full effect. Read-only boot audits still run.\n'
+  ansible-playbook --check --diff \
+    -i "${repo_root}/ansible/inventory/localhost.yml" \
+    "${repo_root}/ansible/playbook.yml" \
+    "${extra_vars[@]}" \
+    --ask-become-pass
+  printf '\nReview the preview above. The real playbook may start or reload configured services. No reboot is automatic.\n'
+  read -r -p 'Apply the full configuration now? [y/N] ' apply_answer
+  case "$apply_answer" in
+    y|Y|yes|YES) ;;
+    *)
+      printf 'Configuration convergence declined after preview.\n'
+      exit 3
+      ;;
+  esac
+fi
 ansible-playbook \
   -i "${repo_root}/ansible/inventory/localhost.yml" \
   "${repo_root}/ansible/playbook.yml" \

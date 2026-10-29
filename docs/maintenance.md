@@ -12,6 +12,13 @@ versions per package. This leaves several downgrade candidates while bounding
 cache growth. The package cache lives on its own Btrfs subvolume, so it is not
 included in root snapshots.
 
+`archlinux-contrib` supplies `checkservices`, which identifies system services
+still using deleted executable mappings after an upgrade. Hexen offers it as a
+separate post-update review with `sudo checkservices -P`; this skips `pacdiff`
+and asks before each service restart. The script also reloads or re-executes
+systemd when needed. See the [official package](https://archlinux.org/packages/extra/any/archlinux-contrib/)
+and [upstream script](https://github.com/archlinux/contrib/blob/master/admin/checkservices).
+
 After a system upgrade, review pacman-provided config changes before merging
 them:
 

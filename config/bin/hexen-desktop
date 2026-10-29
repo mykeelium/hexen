@@ -2,6 +2,72 @@
 set -euo pipefail
 missing() { notify-send 'Hexen' "$1 is not installed. See docs/app-sources.md."; exit 1; }
 
+screenshot_path() {
+  local directory="$HOME/Pictures/Screenshots" stamp candidate suffix=0
+  mkdir -p -- "$directory"
+  stamp=$(date +%Y-%m-%d_%H-%M-%S)
+  candidate="$directory/screenshot-$stamp.png"
+  while [[ -e $candidate ]]; do
+    suffix=$((suffix + 1))
+    candidate="$directory/screenshot-$stamp-$suffix.png"
+  done
+  printf '%s\n' "$candidate"
+}
+
+capture_screenshot() {
+  local mode=${1:-region} geometry output active_workspace window_rects
+  local destination temp_dir temp_image
+  command -v grim >/dev/null || missing Grim
+  command -v wl-copy >/dev/null || missing 'wl-clipboard'
+
+  case "$mode" in
+    region|annotate)
+      command -v slurp >/dev/null || missing Slurp
+      geometry=$(slurp) || return 0
+      [[ -n $geometry ]] || return 0
+      ;;
+    window)
+      command -v slurp >/dev/null || missing Slurp
+      command -v hyprctl >/dev/null || missing Hyprland
+      command -v jq >/dev/null || missing jq
+      active_workspace=$(hyprctl -j activeworkspace | jq -er '.id') || return 1
+      window_rects=$(hyprctl -j clients | jq -r --argjson workspace "$active_workspace" '
+        .[]
+        | select(.mapped == true and .hidden == false and .workspace.id == $workspace)
+        | select(.size[0] > 0 and .size[1] > 0)
+        | "\((.at[0] | floor)),\((.at[1] | floor)) \((.size[0] | floor))x\((.size[1] | floor)) \((.title // .class // "Window" | gsub("[\\r\\n]"; " ")))"
+      ')
+      [[ -n $window_rects ]] || { notify-send 'Screenshot' 'No visible windows on this workspace'; return 0; }
+      geometry=$(printf '%s\n' "$window_rects" | slurp -r -f '%x,%y %wx%h') || return 0
+      [[ -n $geometry ]] || return 0
+      ;;
+    display)
+      command -v hyprctl >/dev/null || missing Hyprland
+      command -v jq >/dev/null || missing jq
+      output=$(hyprctl -j monitors | jq -er '.[] | select(.focused == true) | .name') || return 1
+      ;;
+    *) printf 'Unknown screenshot mode: %s\n' "$mode" >&2; return 2 ;;
+  esac
+
+  destination=$(screenshot_path)
+  temp_dir=$(mktemp -d "${destination%/*}/.hexen-screenshot.XXXXXX") || return 1
+  temp_image="$temp_dir/capture.png"
+  trap 'rm -rf -- "$temp_dir"; trap - RETURN' RETURN
+
+  if [[ $mode == annotate ]]; then
+    command -v swappy >/dev/null || missing Swappy
+    grim -g "$geometry" - | swappy -f - -o - > "$temp_image"
+  elif [[ $mode == display ]]; then
+    grim -o "$output" "$temp_image"
+  else
+    grim -g "$geometry" "$temp_image"
+  fi
+  [[ -s $temp_image ]] || { notify-send 'Screenshot' 'Capture produced no image'; return 1; }
+  mv -- "$temp_image" "$destination"
+  wl-copy --type image/png < "$destination"
+  notify-send 'Screenshot saved and copied' "$destination"
+}
+
 selected_launcher() {
   local config="$HOME/.config/hexen/launcher" backend
   if [[ ! -r $config ]]; then
@@ -82,9 +148,15 @@ case "${1:-}" in
     exec ghostty -e env "HYPRLAND_CONFIG=$monitor_config" hyprmon ;;
   screensaver) exec "$HOME/.local/bin/hexen-screensaver" start ;;
   screenshot)
-    region=$(slurp) || exit 0
-    grim -g "$region" - | wl-copy --type image/png
-    notify-send 'Screenshot' 'Region copied to clipboard' ;;
+    capture_screenshot region ;;
+  screenshot-menu)
+    choice=$(printf '%s\n' 'Region' 'Window' 'Full display' 'Annotated region' | pick_menu 'Screenshot: ') || exit 0
+    case "$choice" in
+      Region) capture_screenshot region ;;
+      Window) capture_screenshot window ;;
+      'Full display') capture_screenshot display ;;
+      'Annotated region') capture_screenshot annotate ;;
+    esac ;;
   menu)
     choice=$(printf '%s\n' 'Applications' 'Themes' 'Screensaver' 'Display settings' 'Edit keybindings' 'Edit Hyprland appearance' 'System' | pick_menu 'Hexen: ') || exit 0
     case "$choice" in
@@ -111,5 +183,5 @@ case "${1:-}" in
       *Restart*) exec systemctl reboot ;;
       *'Shut down'*) exec systemctl poweroff ;;
     esac ;;
-  *) printf 'Usage: %s {launcher|start-session|browser|browser-private|passwords|clipboard|screenshot|screensaver|monitors|menu|system-menu}\n' "$0" >&2; exit 2 ;;
+  *) printf 'Usage: %s {launcher|start-session|browser|browser-private|passwords|clipboard|screenshot|screenshot-menu|screensaver|monitors|menu|system-menu}\n' "$0" >&2; exit 2 ;;
 esac

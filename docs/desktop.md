@@ -72,7 +72,8 @@ provides a test login in the disposable VM; it disappears on reboot.
 | Super+minus/equal and Shift variants | Resize |
 | Super+mouse buttons / scroll | Move/resize windows / cycle workspaces |
 | Super+C / V / X | Universal copy/paste/cut |
-| Super+Ctrl+V / Print | Clipboard history / region screenshot to clipboard |
+| Super+Ctrl+V / Print | Clipboard history / capture selected region, save, and copy |
+| Super+Shift+Print | Screenshot menu: region, window, full display, or annotated region |
 | Super+Ctrl+L | Lock through loginctl/hypridle/hyprlock |
 | Super+comma and modifier variants | Notification controls |
 | Media and brightness keys | PipeWire volume, playerctl playback, brightnessctl |
@@ -101,8 +102,13 @@ rather than installing Omarchy's framework:
   `z` Bash command; rupa's `z` package is also installed under the `j` alias to
   avoid a command-name collision. Both tools maintain directory history locally.
 - Window pop keeps float/pin semantics but does not apply Omarchy's fixed size.
-- Screenshots copy a selected region to the clipboard; annotation, recording,
-  OCR, color picking, and share/transcode/reminder menus are not implemented.
+- Screenshots are local and user initiated. Print captures a selected region;
+  Super+Shift+Print opens region, visible-window, focused-display, and annotated
+  region actions. Each capture is saved in `~/Pictures/Screenshots` and copied
+  to the Wayland clipboard. Same-second filename collisions get a numeric suffix.
+  Window selection uses Hyprland's visible windows on the current workspace.
+  Annotation uses Swappy. Screen recording, OCR, color picking, and
+  share/transcode/reminder menus are not part of this capture workflow.
 - The media keys call native tools without SwayOSD. Touchpad, keyboard-backlight,
   monitor-scaling/mirroring, night-light, and dictation helpers are not included.
 - Optional Omarchy application/web-app keys are omitted when those apps/accounts
@@ -159,6 +165,11 @@ reduce playback quality; using the computer or an external microphone keeps the
 headphones in a higher quality playback profile.
 
 ## Meetings and recording
+
+For still images, use Print for a quick region capture or Super+Shift+Print to
+choose a capture mode. Hexen uses Grim and Slurp; Swappy provides annotation.
+These are provisioned with the desktop role. The annotated result is saved and
+copied when the annotation window closes.
 
 The Wayland screen-capture path is already configured: Hyprland's XDG portal
 backend is selected for ScreenCast, and PipeWire is started with the user

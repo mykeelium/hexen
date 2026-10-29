@@ -27,7 +27,27 @@ The installed package manifest and dependency diff are retained in the VM under
 `/home/mcuomo/hexen-vm-recovery/packages-after-apps.txt` and
 `app-package-diff.txt`.
 
-## Source and update inventory
+## Update ownership
+
+`hexen update` handles the signed Arch package transaction, an optional
+reviewed fast-forward of this repository, offers per-user migrations after
+Pacman succeeds, and can offer a reviewed Ansible convergence. Its source report
+checks local pins and installed state only; it does not query application
+upstreams. It does not treat every application update as a Pacman update. Use
+the owner and procedure below; keep manual or unsupported sources visibly
+pending rather than installing an AUR helper or adding an unreviewed repository.
+
+| Software/source | Update owner | Update procedure | Automation status |
+| --- | --- | --- | --- |
+| Signed Arch packages, including desktop tools, Starship, and language runtimes | Pacman and the Hexen package lists | Use `hexen update` for a full `pacman -Syu`; change package selection in the Ansible lists and apply through the reviewed provisioner. | Package install/update is automated after explicit interactive confirmation. This does not include other rows. |
+| Bitwarden Desktop | Flatpak from the configured Flathub remote | Run `flatpak update` separately; recheck the app ID, publisher listing, and permissions when changing the source. | Installed by Ansible; updates are separate and have no configured automatic schedule. |
+| Zen, 1Password, Zoom, and Slack | Each vendor source plus its reviewed AUR recipe | Inspect the recipe/source/signature or checksum, build as a normal user, inspect the package archive, then install with Pacman. | Manual only; no AUR helper or unattended recipe refresh. See the per-application review below. |
+| Walker and Elephant | Pinned upstream commits and reviewed packaging recipes | Review the pinned source and recipe changes, rebuild as a normal user, inspect packages, and install manually. | Manual only; not updated by `pacman -Syu`. See [`sources.lock`](../install/manual-apps/walker/sources.lock). |
+| Hyprmon | Pinned upstream source and Go module graph | Review the commit/module changes, build and inspect the binary, then replace the manually installed build. | Manual only; not updated by Pacman. |
+| LocalSend | Official pinned AppImage URL and SHA-256 | Review a release, update version/URL/hash together in the desktop role, then reapply the reviewed role. | Provisioned from a pin; no independent package-manager update. |
+| Neovim plugins | `config/nvim/lazy-lock.json` and the tracked source pins | Review source/commit changes, update the tracked pin, then run `:Lazy restore`; `:Lazy update` alone does not advance the reviewed pin. | User-level and manual; outside Pacman. See the [Neovim update instructions](../config/nvim/README.md#installation-and-updates). |
+| Treesitter parsers | `config/nvim/setup.lua` and the parser registry | Review the parser/registry changes, update the explicit setup list, then rerun the Neovim setup as the desktop user. | User-level and manual; outside Pacman. |
+| Mason tools (Lua LSP, OmniSharp, gopls, basedpyright, Ruff) | Mason plus `config/nvim/setup.lua` and receipt files | Review tool release/platform changes, rerun the explicit setup as the desktop user, and refresh recorded versions. | User-level and manual; the plugin lockfile does not pin tool versions. See the [Neovim update instructions](../config/nvim/README.md#installation-and-updates). |
 
 ## Requested CLI utilities
 

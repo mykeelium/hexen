@@ -1,5 +1,6 @@
 ---
 base_packages:
+  - archlinux-contrib
   - base-devel
   - btrfs-progs
   - firewalld

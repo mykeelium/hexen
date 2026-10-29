@@ -7,7 +7,7 @@ desktop_remote_access_packages:
   - openssh
   - wayvnc
 desktop_xdg_state_home: '{{ _desktop_home }}/.local/state'
-desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker, elephant, starship.toml]
+desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker, elephant, swappy, starship.toml]
 desktop_launcher_config_dirs:
   fuzzel: fuzzel
   walker: ''
@@ -69,6 +69,7 @@ desktop_packages:
   - cliphist
   - grim
   - slurp
+  - swappy
   - brightnessctl
   - playerctl
   - libnotify

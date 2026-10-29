@@ -52,6 +52,15 @@ ansible-playbook -i ansible/inventory/localhost.yml ansible/playbook.yml \
   -e desktop_user="$(id -un)" --ask-become-pass
 ```
 
+After a system update, `hexen update` can offer the provisioner in review mode.
+It runs the same dependency and syntax checks, then Ansible check mode with
+diffs, and requires a second confirmation before applying the playbook. Check
+mode is advisory because command-based tasks may be skipped or may not predict
+their full effect. Review the output and tracked configuration changes; the
+playbook may start or reload configured services. It never reboots. Use
+`hexen update --vm` when the target is the nested VM so the default libvirt
+network remains unmanaged.
+
 Roles are intended to be repeatable. Review Ansible's reported changes on every run. The base role enables NetworkManager and sets up memory-backed zram; it does not configure hibernation or disk swap. Verify the result with `swapon --show` and inspect `/etc/systemd/zram-generator.conf`.
 
 The base role creates Snapper's `root` configuration on a Btrfs root if one does not exist. It verifies `/home` is a separate Btrfs subvolume and refuses to proceed if `/.snapshots` is already a separate mount point. This protects Archinstall layouts that provision their own snapshots subvolume; inspect and reconcile that layout manually before rerunning. The role only removes an empty `/.snapshots` mountpoint directory when creating the initial Snapper config; it never unmounts or deletes a subvolume. Snapshots stay local and are not backups. Create a named manual pre-update snapshot with:

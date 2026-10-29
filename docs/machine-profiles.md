@@ -89,6 +89,100 @@ Hexen first creates a new safety backup and then replaces it. Directory
 restores are staged beside the destination before replacement. Review the
 printed destination before confirming.
 
+## Checking update status
+
+`hexen update --check` is a read-only report. It compares the checkout with
+its configured upstream using the most recently fetched remote-tracking data,
+lists packages shown by the local Pacman sync database, checks whether the
+running kernel's module tree is present and whether another module tree appears
+newer than boot, and reports managed links that need reconciliation. It does
+not fetch Git data, refresh package databases, install packages, or change
+configuration. Package results may be stale; the report shows the sync
+database's timestamp and warns when it is over 24 hours old. The kernel result
+is only a reboot signal, not a complete service-restart analysis. Run the usual
+service/update review. `hexen update` is the separate interactive transaction
+entry point described below.
+
+`hexen update` currently performs the first, checkpointed Arch package-update
+slice. It requires a terminal, a clean repository checkout, the supported
+Btrfs root/Snapper setup, and a mounted FAT ESP at `/boot`. A checkout already
+known to be diverged from its cached upstream is refused; incoming upstream
+commits are fetched and offered for review. It refuses an existing Pacman lock
+and requires `/home` to be a separate Btrfs subvolume, as in the documented
+install layout. It checks that `/home` can hold a copy of `/boot` and that
+`/boot` has room at least equal to its current file contents (or 64 MiB). After
+showing free space and the recovery boundary, it creates a private preflight log under
+`~/recovery/hexen-updates/` and requires confirmation before it fetches the
+configured Git remote. Incoming commits and their full diff are shown; a
+separate confirmation is required before a clean fast-forward, which immediately
+updates source-linked configs. Diverged branches stop the workflow. The previous
+and resulting source revisions are recorded in `source-revisions.txt` for
+manual recovery.
+
+After that review, Hexen records package/mount/subvolume data, creates a Snapper
+root snapshot and matching `/boot` archive with checksums, and runs one
+interactive `sudo pacman -Syu` transaction. It records before/after package
+manifests, `.pacnew`/`.pacsave` candidates, failed system units, and a limited
+kernel reboot signal. After a successful transaction and package manifest, it
+offers any reviewed user migrations as a separate, explicitly confirmed step.
+They run as the logged-in user, never during Pacman or as root. `hexen migrate`
+can run pending work later. If migrations are complete, Hexen offers a separate
+Ansible configuration review. The provisioner runs syntax validation and
+check/diff mode, then asks again before applying the full playbook. Check mode
+is advisory: command-based tasks may be skipped or may not predict their full
+effect. Use `hexen update --vm` for nested-VM network settings; default
+convergence uses workstation settings. The transcript, convergence result,
+post-convergence package manifest, and failed-unit list are stored in the same
+recovery directory. A read-only source report records the LocalSend pin/hash
+match, installed versions of separately managed packages, Bitwarden's installed
+Flatpak version, Hyprmon binary presence, and the tracked Neovim pin count. It
+does not query upstreams or claim those sources are current. If
+`archlinux-contrib` is installed, Hexen offers `checkservices -P`, which skips
+`pacdiff`, reloads systemd as needed, and asks before each service restart.
+Post-convergence package/unit records are captured after the provisioner starts,
+whether or not the apply confirmation is accepted. Hexen does not reboot
+automatically. Manual application sources remain separately owned.
+
+Failed transactions retain the checkpoint and log. Hexen never reboots or rolls
+the system back automatically. After a failed package transaction, inspect the
+log and package state, then choose whether to retry or use the documented
+offline recovery procedure. Close other package managers before proceeding.
+Hexen checks the Pacman lock before and during checkpoint creation and compares
+package manifests, but it does not install an ALPM guard; normal package tools
+do not honor Hexen's per-user lock.
+
+Migrations are listed in `install/migrations/manifest.json` and implemented as
+numbered Python files beside it. IDs are immutable once released; scripts must
+be safe to retry because a process can stop after making a change but before
+Hexen records completion. Successful migrations receive private per-user
+markers under `${XDG_STATE_HOME:-~/.local/state}/hexen/migrations/`. Standalone
+`hexen migrate` logs go under that state directory's `logs/`; update-triggered
+migration output is appended to that update's recovery log. A failed migration
+remains pending, while earlier successful migrations stay complete. The
+current manifest is empty, so no migration is defined or run. Review migration
+source changes with the repository update.
+
+The root snapshot does not include `/home`. Restore system files from the
+Snapper snapshot and restore `/boot` from that same run directory as a pair.
+The repository checkout and its managed home configuration live under `/home`;
+if the update fast-forwarded source and you need to restore it, first confirm
+the checkout is clean, then return it to the recorded `before` revision and run
+`hexen config apply`:
+
+```sh
+git status --short
+git reset --hard <before-revision>
+hexen config apply
+```
+
+Run `git reset --hard` only when `git status --short` is empty. Restore personal
+files from a separate backup. Local
+update checkpoints are not an off-device backup and are retained for manual
+review/cleanup. Hexen does not automatically update separately owned
+applications, issue a reboot, or claim that service restarts are unnecessary.
+Review the checkpoint and the [application update ownership table](app-sources.md#update-ownership)
+for Flatpak, pinned AppImage, AUR, Walker, Hyprmon, and Neovim update paths.
+
 ## Edit and share
 
 1. Check the selected profile and current repository state:

@@ -436,13 +436,14 @@ Hexen currently binds Print to a `grim`/`slurp` region capture copied to the
 clipboard. The owner wants a more complete screenshot workflow inspired by
 [Omarchy's capture flow](https://omarchy.baris.sh/manual/screenshots-recording/).
 
-- [ ] **Design and implement a useful screenshot flow.** At minimum, decide and
-  support region, window, and full-display capture; save screenshots under
-  `~/Pictures` and copy them to the clipboard; and provide a clear annotation
-  path. Keep capture local and user initiated. Review Omarchy's capture menu,
-  recording, color picker, and OCR features, and include only the extra modes
-  that fit Hexen's needs. Document bindings, dependencies, save location, and
-  tested behavior in the desktop guide.
+- [x] **Implement the local screenshot flow in source.** Print captures a region;
+  Super+Shift+Print offers region, current-workspace window, focused-display,
+  and annotated-region capture. Every completed image is saved to
+  `~/Pictures/Screenshots` and copied to the clipboard. The desktop role installs
+  Swappy for annotation and links its config. See [desktop guide](desktop.md).
+- [ ] **Accept the flow in the rehearsal VM.** Check that all four menu choices
+  work, the saved images open, clipboard paste works, and cancellation leaves no
+  stray partial file. Record any needed fixes here before the laptop install.
 
 ## Priority 1: add a safe, single update entry point
 
@@ -456,49 +457,79 @@ and reboot prompts in one visible workflow ([update process](https://github.com/
 Hexen should use the parts that fit this setup; it should not automatically
 build AUR packages or run unreviewed remote scripts.
 
-- [ ] **Start with `hexen update --check`.** Report whether the repo has upstream
-  commits, whether it is dirty or diverged, whether official package updates are
-  available, and whether a reboot or config reconciliation is pending. This is
-  read-only.
-- [ ] **Implement the interactive `hexen update` path.** Proposed sequence:
-  1. Acquire a lock, start a readable transcript log, check free space and
-     whether another package operation is active.
-  2. Check Git state. Stop on local edits or divergence; show the diff/commits
-     and require a clean fast-forward before changing repo-owned configs.
-  3. Confirm the update and capture a root snapshot plus a matching `/boot`
-     archive. Clearly report if a safe checkpoint cannot be made.
-  4. Run one complete `pacman -Syu` transaction. Never perform a partial
-     system upgrade. Do not silently install packages from AUR or new package
-     repositories.
-  5. Run idempotent, resumable user-data/config migrations, then apply the
-     reviewed repo's Ansible configuration to converge links and services.
-     Finish with source-specific checks.
-  6. Inspect `.pacnew`/`.pacsave` files, failed services, kernel/boot changes,
-     and update errors. Explain which services need restart and whether a reboot
-     is recommended; do not reboot without the user's confirmation.
-  7. Return a clear success/failure status and point to the log and recovery
-     checkpoint. A failed step must not be reported as a completed update.
-- [ ] **Define rollback boundaries in the update UI.** The root snapshot does not
-  include `/home`; `/boot` needs its matching archive. Roll back user config by
-  reverting to a reviewed Git revision and reapplying it. Restore personal
-  files from the separate backup. Never imply that a root snapshot alone rolls
-  back all three.
-- [ ] **Keep safe exits simple.** Initial version should not block normal Pacman
-  use with an ALPM guard. If later adding a guard, test recovery shells,
-  unattended maintenance, Ansible, and package-manager frontends first. Always
-  retain a documented direct recovery route.
-- [ ] **Separate update ownership.** Official Arch packages update through
-  Pacman. Manual Walker builds, LocalSend's pinned AppImage, proprietary vendor
-  apps, Neovim plugins, Mason tools, and language SDK tools have different
-  sources. Give each an explicit owner and update procedure; show unsupported or
-  manually reviewed updates as pending rather than pretending Pacman covers them.
-- [ ] **Add a migration mechanism before changing user data automatically.**
-  Numbered, idempotent migrations should be versioned with the repo and keep
-  per-user completion markers under Hexen's state directory. They must be
-  resumable after interruption, produce logs, and avoid changing user data
-  during the Pacman transaction. Omarchy documents a similar post-package,
-  per-user migration model and event hooks ([update process](https://github.com/omacom/omarchy/blob/quattro/docs/update-process.md),
-  [dotfiles and hooks](https://github.com/omacom/omarchy/blob/quattro/manual/31-dotfiles.md)).
+- [x] **Implement `hexen update --check` in source.** It reports local Git
+  changes and cached upstream divergence, official package updates from the
+  local sync database, a limited kernel reboot signal, and managed config-link
+  drift. It does not fetch, refresh package databases, or modify files. See
+  [machine profiles](machine-profiles.md#checking-update-status).
+- [ ] **Accept `hexen update --check` in the rehearsal VM.** Confirm output and
+  exit behavior for clean/dirty/diverged repositories, stale package data,
+  pending packages, kernel mismatch, and config-link drift.
+  A read-only invocation on the development host (2026-10-29) exposed that
+  `pacman -Qu` returns status 1 with no output when it lists no updates; Hexen
+  now reports that case as “none listed.” The sync database was stale, so this
+  host run does not establish update availability. The system and session
+  libvirt lists were empty, leaving the VM acceptance pass open.
+- [x] **Implement the checkpointed Arch package-update slice.** `hexen update`
+  requires a TTY, clean checkout, explicit source review for incoming upstream
+  commits, supported Btrfs/Snapper/ESP layout with separate `/home`, adequate
+  archive and `/boot` working space, and no existing Pacman lock. It starts a
+  private log, then asks before
+  recording package and mount manifests, creating a permanent root snapshot and
+  matching `/boot` archive, and running one `pacman -Syu`. It records package
+  results, `.pacnew`/`.pacsave` candidates, failed system units, and a limited
+  kernel reboot signal. It never reboots. See
+  [update status and recovery boundaries](machine-profiles.md#checking-update-status).
+- [x] **Review and fast-forward source explicitly.** The interactive updater
+  fetches the configured remote, stops on divergence, displays incoming commits
+  and the full diff, and asks before a clean fast-forward. It records both
+  revisions because source-linked home config is outside the root snapshot.
+- [x] **Offer reviewed Ansible convergence after the system update.** The
+  updater asks separately after package/migration inspection. Provisioner review
+  mode shows an advisory Ansible check/diff and requires another confirmation
+  before applying; VM network settings require `hexen update --vm`. It records
+  the result, post-convergence package manifest, and failed units. VM acceptance
+  remains open.
+- [x] **Add source-specific local checks and service-restart guidance.** The
+  source report checks the LocalSend pinned digest, local app/package presence,
+  Bitwarden's installed Flatpak version, Hyprmon's binary presence, and Neovim's
+  tracked pin count; it makes no claim about upstream freshness. When available,
+  `checkservices -P` skips `pacdiff` and asks before each service restart. The
+  base role now installs `archlinux-contrib` for this tool. No restart is
+  automatic.
+- [ ] **Accept the checkpointed update in the rehearsal VM.** Exercise cancel,
+  fetch failure, source-update decline/accept, clean fast-forward and divergence,
+  successful and failed Pacman transactions, checkpoint completeness, low-space
+  and lock refusal, post-update records, and manual recovery from the paired
+  root snapshot and `/boot` archive. Exercise migration and convergence cancel,
+  preview, apply, failure, and post-convergence reporting. Use a newer kernel
+  when one is available. Check source-report findings and `checkservices` with
+  both declined and accepted service restarts.
+- [x] **Define rollback boundaries in the update UI and guide.** The root
+  snapshot excludes `/home`; restore `/boot` only from its matching archive.
+  Restore repo-managed user config from a reviewed Git revision and reapply it;
+  restore personal files from a separate backup. The local recovery pair is not
+  an off-device backup.
+- [x] **Keep safe exits simple.** No ALPM guard was added, so normal Pacman use
+  remains available outside Hexen's own update lock. The direct package-manager
+  and offline recovery routes remain documented. Revisit recovery shells,
+  unattended maintenance, Ansible, and package-manager frontends before ever
+  considering a system-wide guard.
+- [x] **Separate update ownership.** The
+  [application source guide](app-sources.md#update-ownership) names the owner
+  and procedure for signed Arch packages, Flatpak, AUR/vendor packages, Walker
+  and Elephant, Hyprmon, LocalSend, Neovim plugins/parsers, and Mason tools. It
+  makes clear which updates are manual or separate from Pacman and does not
+  imply unsupported sources are covered by `hexen update`.
+- [x] **Add a migration mechanism before changing user data automatically.**
+  `hexen migrate` runs reviewed, numbered Python migrations from
+  `install/migrations/manifest.json` as the current user. Private per-user
+  markers are written atomically only after success; failed work stays pending
+  and logs are retained under Hexen's state directory. `hexen update` offers
+  pending migrations after Pacman succeeds and the package manifest is saved.
+  They never run in the package transaction or as root. The registry is empty
+  until a concrete user-data migration is reviewed and added. VM acceptance of
+  successful, failed, declined, and resumed migration flows remains open.
 - [ ] **Add an update status indicator after the CLI is reliable.** A Waybar
   module or menu item can show available repo/package updates and launch
   `hexen update`; clicking it must not start a privileged transaction silently.

@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Inspect the Hexen repository and its managed desktop links."""
+"""Manage Hexen configuration and update workflows."""
 
 from __future__ import annotations
 
 import argparse
+import fcntl
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,13 +25,138 @@ REMOTE_RE = re.compile(r"^desktop_remote_access_enabled:\s*(true|false)\s*(?:#.*
 PROFILES = {"common", "numen", "arcana"}
 CONFIG_DIRS = [
     "hypr", "ghostty", "mako", "xdg-desktop-portal", "nvim", "lazydocker",
-    "elephant", "starship.toml",
+    "elephant", "swappy", "starship.toml",
 ]
 HELPERS = ["hexen", "hexen-desktop", "hexen-theme", "hexen-screensaver"]
+MIGRATION_ID_RE = re.compile(r"^[0-9]{3}_[a-z0-9][a-z0-9_-]*$")
+MIGRATION_MANIFEST = REPO_ROOT / "install/migrations/manifest.json"
+LOCALSEND_DEFAULTS = REPO_ROOT / "ansible/roles/desktop/defaults/main.yml"
+LOCAL_MANUAL_PACKAGES = (
+    "zen-browser-bin", "1password", "zoom", "slack-desktop", "walker",
+    "elephant", "elephant-desktopapplications", "elephant-files",
+    "elephant-runner", "elephant-calc", "elephant-websearch",
+    "elephant-providerlist",
+)
 
 
 class ConfigError(Exception):
     pass
+
+
+def source_status_lines(package_manifest: str | None) -> list[str]:
+    """Report local integrity/installation facts without querying upstreams."""
+    lines = ["Application source checks (local state; no upstream update checks):"]
+    expected_hash = ""
+    version = ""
+    try:
+        if LOCALSEND_DEFAULTS.is_symlink() or not LOCALSEND_DEFAULTS.is_file():
+            raise OSError("desktop defaults file is missing or unsafe")
+        for line in LOCALSEND_DEFAULTS.read_text(encoding="utf-8").splitlines():
+            hash_match = re.match(r"^desktop_localsend_sha256:\s*([0-9a-f]{64})\s*$", line)
+            version_match = re.match(r"^desktop_localsend_version:\s*([^\s#]+)", line)
+            if hash_match:
+                expected_hash = hash_match.group(1)
+            if version_match:
+                version = version_match.group(1)
+    except (OSError, UnicodeError) as error:
+        lines.append(f"  LocalSend: pin unavailable ({error})")
+    else:
+        image = Path.home() / ".local/opt/localsend/LocalSend.AppImage"
+        if not expected_hash:
+            lines.append("  LocalSend: no valid SHA-256 pin found")
+        elif image.is_symlink():
+            lines.append("  LocalSend: installed path is a symlink; refusing to hash it")
+        elif not image.is_file():
+            lines.append("  LocalSend: pinned AppImage is not installed")
+        else:
+            try:
+                digest = hashlib.sha256()
+                with image.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                status = "matches" if digest.hexdigest() == expected_hash else "DIFFERS from"
+                lines.append(f"  LocalSend: installed AppImage {status} the tracked SHA-256 pin (version {version or 'unknown'})")
+            except OSError as error:
+                lines.append(f"  LocalSend: installed AppImage could not be checked ({error})")
+
+    if package_manifest is None:
+        lines.append("  AUR/vendor/Walker packages: installed package inventory unavailable")
+    else:
+        installed = {}
+        for row in package_manifest.splitlines():
+            columns = row.split(None, 1)
+            if len(columns) == 2:
+                installed[columns[0]] = columns[1]
+        present_manual = [f"{name} {installed[name]}" for name in LOCAL_MANUAL_PACKAGES if name in installed]
+        lines.append("  AUR/vendor/Walker packages: " + (", ".join(present_manual) if present_manual else "none of the tracked candidates detected"))
+        lines.append("    Installed versions are inventory only; recipe/vendor freshness remains a separate review.")
+
+    flatpak = shutil.which("flatpak")
+    if not flatpak:
+        lines.append("  Bitwarden Flatpak: flatpak command unavailable")
+    else:
+        try:
+            result = subprocess.run(
+                [flatpak, "info", "--system", "--show-version", "com.bitwarden.desktop"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                lines.append(f"  Bitwarden Flatpak: installed version {result.stdout.strip()}; Flathub freshness not queried")
+            else:
+                lines.append("  Bitwarden Flatpak: system installation not found or unavailable")
+        except OSError as error:
+            lines.append(f"  Bitwarden Flatpak: check unavailable ({error})")
+
+    hyprmon = Path.home() / ".local/bin/hyprmon"
+    if hyprmon.is_symlink():
+        lines.append("  Hyprmon: installed path is a symlink; source revision not checked")
+    elif hyprmon.is_file():
+        lines.append("  Hyprmon: local binary present; pinned build revision not checked")
+    else:
+        lines.append("  Hyprmon: local binary not found")
+
+    lockfile = REPO_ROOT / "config/nvim/lazy-lock.json"
+    try:
+        if lockfile.is_symlink() or not lockfile.is_file():
+            raise OSError("tracked lockfile is missing or unsafe")
+        pins = json.loads(lockfile.read_text(encoding="utf-8"))
+        if not isinstance(pins, dict):
+            raise ValueError("lockfile must contain an object")
+        lines.append(f"  Neovim plugins: {len(pins)} tracked pins; deployed plugin revisions are not compared")
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        lines.append(f"  Neovim plugins: tracked pin inventory unavailable ({error})")
+    return lines
+
+
+def offer_service_restart_review(log: Path) -> tuple[str, bool]:
+    """Offer Arch's interactive process/service restart check without pacdiff."""
+    checker = shutil.which("checkservices")
+    if not checker:
+        print("Service restart review unavailable: install archlinux-contrib with the reviewed provisioner.")
+        update_log(log, "Service restart review unavailable: checkservices is not installed.")
+        return "unavailable", False
+    print("Arch checkservices will reload systemd, inspect processes using replaced files, and ask before each service restart; pacdiff is skipped.")
+    try:
+        answer = input("Run this service review now? [y/N] ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in {"y", "yes"}:
+        update_log(log, "Interactive service restart review declined.")
+        return "declined", False
+    transcript = log.parent / "service-restart-review.log"
+    try:
+        result = subprocess.run(
+            ["script", "--quiet", "--flush", "--return", "--append", "--command",
+             shlex.join(["sudo", checker, "-P"]), str(transcript)],
+            check=False,
+        )
+    except OSError as error:
+        update_log(log, f"Service restart review could not start: {error}")
+        return f"could-not-start: {error}", True
+    status = "ran" if result.returncode == 0 else f"failed-{result.returncode}"
+    update_log(log, f"Interactive service restart review {status}; transcript: {transcript}")
+    print(f"Service restart review: {status}; transcript: {transcript}")
+    return status, result.returncode != 0
 
 
 def repo_git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -138,6 +266,737 @@ def command_status() -> int:
     return 1 if problems else 0
 
 
+def command_update_check() -> int:
+    """Report update signals from local metadata without changing the system."""
+    failures = 0
+    print("Hexen update check (read-only)")
+
+    status = repo_git("status", "--porcelain=v1", "--untracked-files=normal")
+    revision = repo_git("rev-parse", "--short", "HEAD")
+    if status.returncode or revision.returncode:
+        detail = status.stderr.strip() if status.returncode else revision.stderr.strip()
+        print(f"Repository: unavailable ({detail or 'Git status failed'})")
+        failures += 1
+    else:
+        print(f"Repository: {revision.stdout.strip()} ({'dirty' if status.stdout else 'clean'})")
+        upstream = repo_git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+        if upstream.returncode:
+            print("Upstream: not configured; cannot compare local commits")
+        else:
+            counts = repo_git("rev-list", "--left-right", "--count", f"HEAD...{upstream.stdout.strip()}")
+            if counts.returncode:
+                print(f"Upstream: comparison unavailable ({counts.stderr.strip() or 'Git comparison failed'})")
+                failures += 1
+            else:
+                ahead, behind = (int(value) for value in counts.stdout.split())
+                print(f"Upstream: {upstream.stdout.strip()} (cached tracking data; {ahead} ahead, {behind} behind)")
+        if status.stdout:
+            print("Repository changes:")
+            for line in status.stdout.splitlines():
+                print(f"  {line}")
+
+    print("Official package updates:")
+    pacman = shutil.which("pacman")
+    if not pacman:
+        print("  unavailable (pacman not found)")
+    else:
+        sync_dir = Path("/var/lib/pacman/sync")
+        sync_files = [path for path in sync_dir.iterdir() if path.is_file()] if sync_dir.is_dir() else []
+        if sync_files:
+            last_sync = max(path.stat().st_mtime for path in sync_files)
+            age_hours = max(0, (datetime.now().timestamp() - last_sync) / 3600)
+            stamp = datetime.fromtimestamp(last_sync).astimezone().isoformat(timespec="minutes")
+            freshness = "stale; run a normal sync before relying on this" if age_hours > 24 else "recent"
+            print(f"  sync database: {stamp} ({freshness})")
+        else:
+            print("  sync database: missing; package result may be unavailable")
+        try:
+            packages = subprocess.run(
+                [pacman, "-Qu"], text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False,
+            )
+        except OSError as error:
+            print(f"  unavailable ({error})")
+            failures += 1
+        else:
+            if packages.returncode == 1 and not packages.stdout.strip() and not packages.stderr.strip():
+                # pacman -Qu uses a nonzero status when it has no package rows to print.
+                print("  none listed by the local sync database")
+            elif packages.returncode:
+                print(f"  unavailable ({packages.stderr.strip() or 'pacman query failed'})")
+                failures += 1
+            elif packages.stdout.strip():
+                updates = packages.stdout.strip().splitlines()
+                print(f"  {len(updates)} update(s) listed by the local sync database:")
+                for package in updates:
+                    print(f"    {package}")
+            else:
+                print("  none listed by the local sync database")
+
+    print("Reboot signal:")
+    running_modules = Path("/usr/lib/modules") / os.uname().release
+    if not running_modules.is_dir():
+        print(f"  possible reboot pending: running kernel {os.uname().release} has no module tree")
+    else:
+        try:
+            uptime = float(Path("/proc/uptime").read_text(encoding="ascii").split()[0])
+            boot_time = datetime.now().timestamp() - uptime
+            module_root = running_modules.parent
+            newer = [
+                path.name for path in module_root.iterdir()
+                if path.is_dir() and path != running_modules and path.stat().st_mtime > boot_time
+            ]
+            if newer:
+                print("  possible kernel reboot pending; module trees appeared since boot: " + ", ".join(sorted(newer)))
+            else:
+                print("  no kernel reboot signal detected (service-level restart needs are not checked)")
+        except (OSError, ValueError, IndexError) as error:
+            print(f"  unavailable ({error})")
+            failures += 1
+
+    installed_manifest: str | None = None
+    if pacman:
+        installed = subprocess.run(
+            [pacman, "-Q"], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        if installed.returncode == 0:
+            installed_manifest = installed.stdout
+    print("Application source checks (local state only):")
+    for line in source_status_lines(installed_manifest):
+        print(line)
+    checker = shutil.which("checkservices")
+    if checker:
+        print("Service restart review: `sudo checkservices -P` is available; it reloads systemd as needed, skips pacdiff, and asks before restarting affected services.")
+    else:
+        print("Service restart review: checkservices is not installed (provided by archlinux-contrib).")
+
+    print("Managed config links:")
+    try:
+        problems = []
+        for destination, source in sorted(expected_links(Path.home()).items()):
+            if not destination.is_symlink() or destination.resolve(strict=False) != source.resolve(strict=False):
+                problems.append(destination.relative_to(Path.home()))
+        if problems:
+            print("  reconciliation needed:")
+            for path in problems:
+                print(f"    {path}")
+        else:
+            print("  links match this repository checkout")
+    except (ConfigError, OSError, UnicodeError) as error:
+        print(f"  unavailable ({error})")
+        failures += 1
+    print("Note: this check does not fetch Git data, refresh package databases, contact application upstreams, or modify files.")
+    return 1 if failures else 0
+
+
+def update_log(path: Path, message: str) -> None:
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(message.rstrip() + "\n")
+        stream.flush()
+
+
+def migration_state_root() -> Path:
+    configured = os.environ.get("XDG_STATE_HOME")
+    base = Path(configured).expanduser() if configured else Path.home() / ".local/state"
+    if not base.is_absolute():
+        raise ConfigError("XDG_STATE_HOME must be an absolute path")
+    cursor = Path(base.anchor)
+    for part in base.parts[1:]:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise ConfigError(f"refusing symlinked migration state path component: {cursor}")
+    root = base / "hexen/migrations"
+    # Create missing components without following symlinks. Existing ancestors
+    # may be shared system directories; the Hexen state directory itself must
+    # be a private, user-owned directory.
+    missing: list[Path] = []
+    cursor = root
+    while not cursor.exists() and not cursor.is_symlink():
+        missing.append(cursor)
+        cursor = cursor.parent
+    if cursor.is_symlink() or not cursor.is_dir():
+        raise ConfigError(f"migration state path has an unsafe ancestor: {cursor}")
+    for directory in reversed(missing):
+        directory.mkdir(mode=0o700)
+    for directory in (base,):
+        if directory.is_symlink() or not directory.is_dir():
+            raise ConfigError(f"migration state directory is unsafe: {directory}")
+        info = directory.stat()
+        if info.st_uid != os.getuid():
+            raise ConfigError(f"migration state directory must be owned by this user: {directory}")
+    for directory in (base / "hexen", root):
+        info = directory.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_mode & 0o700 != 0o700:
+            raise ConfigError(f"migration state directory must be private, user-owned, and writable: {directory}")
+    return root
+
+
+def load_migrations() -> list[dict[str, str]]:
+    migration_dir = MIGRATION_MANIFEST.parent
+    if (migration_dir.is_symlink() or migration_dir.parent.is_symlink()
+            or not migration_dir.is_dir() or MIGRATION_MANIFEST.is_symlink()):
+        raise ConfigError("migration registry path is missing or unsafe")
+    try:
+        manifest = json.loads(MIGRATION_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ConfigError(f"cannot read migration manifest: {error}") from error
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise ConfigError("migration manifest has an unsupported schema")
+    rows = manifest.get("migrations")
+    if not isinstance(rows, list):
+        raise ConfigError("migration manifest must contain a migrations list")
+    migrations: list[dict[str, str]] = []
+    seen: set[str] = set()
+    prior_id = ""
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ConfigError("migration entry must be an object")
+        migration_id, description, script_name = row.get("id"), row.get("description"), row.get("script")
+        if (not isinstance(migration_id, str) or not MIGRATION_ID_RE.fullmatch(migration_id)
+                or migration_id in seen or migration_id <= prior_id):
+            raise ConfigError("migration IDs must be unique, numbered, and sorted")
+        if not isinstance(description, str) or not description.strip():
+            raise ConfigError(f"migration {migration_id} has no description")
+        if not isinstance(script_name, str) or Path(script_name).name != script_name or not script_name.endswith(".py"):
+            raise ConfigError(f"migration {migration_id} has an unsafe script path")
+        script_path = migration_dir / script_name
+        if script_path.is_symlink() or not script_path.is_file():
+            raise ConfigError(f"migration script is missing or unsafe: {script_name}")
+        migrations.append({"id": migration_id, "description": description.strip(), "script": str(script_path)})
+        seen.add(migration_id)
+        prior_id = migration_id
+    return migrations
+
+
+def pending_migrations(state: Path, migrations: list[dict[str, str]]) -> list[dict[str, str]]:
+    pending = []
+    for migration in migrations:
+        marker = state / f"{migration['id']}.json"
+        if marker.is_symlink():
+            raise ConfigError(f"refusing symlinked migration marker: {marker}")
+        if marker.exists():
+            try:
+                data = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise ConfigError(f"invalid migration completion marker {marker}: {error}") from error
+            if not isinstance(data, dict) or data.get("id") != migration["id"]:
+                raise ConfigError(f"invalid migration completion marker: {marker}")
+        else:
+            pending.append(migration)
+    return pending
+
+
+def run_migrations(log: Path) -> tuple[int, int]:
+    """Run pending reviewed migrations as this user; return (completed, remaining)."""
+    migrations = load_migrations()
+    if not migrations:
+        return 0, 0
+    if os.geteuid() == 0:
+        raise ConfigError("user migrations must run from an unprivileged user session")
+    state = migration_state_root()
+    lock_path = state / ".lock"
+    if lock_path.is_symlink():
+        raise ConfigError(f"refusing symlinked migration lock: {lock_path}")
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(lock_fd)
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ConfigError(f"migration lock must be private and user-owned: {lock_path}")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ConfigError("another Hexen migration run is already active") from error
+
+        pending = pending_migrations(state, migrations)
+        if not pending:
+            return 0, 0
+        completed = 0
+        for migration in pending:
+            update_log(log, f"Starting user migration {migration['id']}: {migration['description']}")
+            print(f"Running {migration['id']}: {migration['description']}")
+            with log.open("a", encoding="utf-8") as stream:
+                stream.write(f"\n--- {migration['id']} ---\n")
+                stream.flush()
+                result = subprocess.run([sys.executable, migration["script"]], cwd=REPO_ROOT,
+                                        stdout=stream, stderr=subprocess.STDOUT, check=False)
+            if result.returncode:
+                update_log(log, f"Migration {migration['id']} failed with status {result.returncode}; it remains pending.")
+                print(f"Migration {migration['id']} failed (status {result.returncode}); see {log}")
+                return completed, len(pending) - completed
+            marker = state / f"{migration['id']}.json"
+            payload = json.dumps({"id": migration["id"], "source_revision": repo_git("rev-parse", "HEAD").stdout.strip(),
+                                  "completed_at": datetime.now(timezone.utc).isoformat()}, indent=2) + "\n"
+            fd, temporary = tempfile.mkstemp(prefix=f".{migration['id']}.", suffix=".tmp", dir=state)
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    stream.write(payload)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, marker)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            update_log(log, f"Migration {migration['id']} completed.")
+            completed += 1
+        return completed, 0
+    finally:
+        os.close(lock_fd)
+
+
+def command_migrate() -> int:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ConfigError("hexen migrate requires an interactive terminal")
+    if os.geteuid() == 0:
+        raise ConfigError("hexen migrate must be run as the logged-in user, without sudo")
+    migrations = load_migrations()
+    if not migrations:
+        print("No Hexen user migrations are defined.")
+        return 0
+    state = migration_state_root()
+    pending = pending_migrations(state, migrations)
+    if not pending:
+        print("No pending Hexen user migrations.")
+        return 0
+    print("Pending user migrations:")
+    for migration in pending:
+        print(f"  {migration['id']}: {migration['description']}")
+    log_dir = state / "logs"
+    if log_dir.is_symlink():
+        raise ConfigError(f"refusing symlinked migration log directory: {log_dir}")
+    log_dir.mkdir(mode=0o700, exist_ok=True)
+    log_info = log_dir.stat()
+    if log_info.st_uid != os.getuid() or log_info.st_mode & 0o077:
+        raise ConfigError(f"migration log directory must be private and user-owned: {log_dir}")
+    now = datetime.now(timezone.utc)
+    log = log_dir / (now.strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(4) + ".log")
+    log.touch(mode=0o600)
+    print(f"Migration log: {log}")
+    try:
+        answer = input("Run these migrations as the current user? [y/N] ").strip().lower()
+    except EOFError as error:
+        raise ConfigError("confirmation input closed; no migrations were run") from error
+    if answer not in {"y", "yes"}:
+        print("Migration run cancelled.")
+        return 0
+    completed, remaining = run_migrations(log)
+    print(f"Completed {completed} migration(s); {remaining} remain pending.")
+    return 1 if remaining else 0
+def update_capture(argv: list[str], log: Path) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    update_log(log, "$ " + shlex.join(argv))
+    if result.stdout:
+        update_log(log, result.stdout)
+    if result.stderr:
+        update_log(log, result.stderr)
+    if result.returncode:
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit status {result.returncode}"
+        raise ConfigError(f"command failed: {shlex.join(argv)}: {detail}")
+    return result
+
+
+def update_checkpoint_root() -> Path:
+    home = Path.home()
+    recovery = home / "recovery"
+    root = recovery / "hexen-updates"
+    if recovery.is_symlink() or root.is_symlink():
+        raise ConfigError("refusing to create update checkpoints through a symlink")
+    recovery.mkdir(mode=0o700, exist_ok=True)
+    root.mkdir(mode=0o700, exist_ok=True)
+    for path in (recovery, root):
+        info = path.stat()
+        if not path.is_dir() or info.st_uid != os.getuid():
+            raise ConfigError(f"update checkpoint directory must be owned by this user: {path}")
+    mode = root.stat().st_mode
+    if mode & 0o077:
+        raise ConfigError(f"update checkpoint directory must be private (mode 0700): {root}")
+    if mode & 0o700 != 0o700:
+        raise ConfigError(f"update checkpoint directory must be writable by this user: {root}")
+    return root
+
+
+def ensure_no_pacman_lock() -> None:
+    lock = Path("/var/lib/pacman/db.lck")
+    if lock.exists() or lock.is_symlink():
+        raise ConfigError(f"Pacman database lock exists; inspect for an active package operation: {lock}")
+
+
+def refresh_repository(log: Path) -> tuple[str, str, bool]:
+    """Fetch the configured upstream and offer only a reviewed fast-forward."""
+    current = repo_git("rev-parse", "HEAD")
+    branch = repo_git("symbolic-ref", "--quiet", "--short", "HEAD")
+    if current.returncode or branch.returncode:
+        update_log(log, "Source update skipped: checkout is detached or its revision is unavailable.")
+        print("Source update skipped because this checkout has no current branch.")
+        return current.stdout.strip(), current.stdout.strip(), False
+
+    old_revision = current.stdout.strip()
+    remote = repo_git("config", "--get", f"branch.{branch.stdout.strip()}.remote")
+    if remote.returncode or not remote.stdout.strip():
+        update_log(log, "Source update skipped: current branch has no configured remote.")
+        print("Source update skipped; no remote is configured for this branch.")
+        return old_revision, old_revision, False
+
+    remote_name = remote.stdout.strip()
+    if remote_name != ".":
+        update_log(log, "Fetching the configured source remote; remote URL and credential output are omitted from the log.")
+        print("Fetching the configured source remote…")
+        fetched = subprocess.run(
+            ["git", "--no-pager", "-C", str(REPO_ROOT), "-c", "core.hooksPath=/dev/null",
+             "fetch", "--no-tags", remote_name],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        if fetched.returncode:
+            raise ConfigError(f"Git fetch failed (status {fetched.returncode}); source files were not changed")
+        update_log(log, "Configured source remote fetch completed.")
+
+    upstream = repo_git("rev-parse", "--symbolic-full-name", "@{upstream}")
+    if upstream.returncode:
+        raise ConfigError(upstream.stderr.strip() or "cannot resolve the configured upstream after fetch")
+    target = upstream.stdout.strip()
+    counts = repo_git("rev-list", "--left-right", "--count", f"HEAD...{target}")
+    if counts.returncode:
+        raise ConfigError(counts.stderr.strip() or "cannot compare source branch with its upstream")
+    ahead, behind = (int(value) for value in counts.stdout.split())
+    if ahead and behind:
+        raise ConfigError(f"source branch has diverged from {target}; reconcile it manually before updating")
+    if not behind:
+        update_log(log, f"Source is already current at {old_revision} (ahead {ahead}, behind 0).")
+        print(f"Source checkout is current relative to {target} (ahead {ahead}, behind 0).")
+        return old_revision, old_revision, False
+
+    commits = repo_git("log", "--oneline", "--decorate=no", f"HEAD..{target}")
+    stat = repo_git("diff", "--stat", "--no-ext-diff", "--no-color", "HEAD", target)
+    diff = repo_git("diff", "--no-ext-diff", "--no-color", "HEAD", target)
+    if any(result.returncode for result in (commits, stat, diff)):
+        raise ConfigError("cannot display all incoming source changes; no fast-forward was performed")
+    summary = (
+        f"Incoming commits from {target}:\n{commits.stdout.strip()}\n\n"
+        f"Change summary:\n{stat.stdout.strip()}\n\n"
+        "Full source diff follows:\n" + diff.stdout
+    )
+    print(summary)
+    update_log(log, summary)
+    print("A fast-forward changes the checked-out source immediately, including any linked desktop config files.")
+    try:
+        answer = input(f"Fast-forward {branch.stdout.strip()} to {target}? [y/N] ").strip().lower()
+    except EOFError as error:
+        raise ConfigError("confirmation input closed; source was not fast-forwarded") from error
+    if answer not in {"y", "yes"}:
+        update_log(log, "Source fast-forward declined; proceeding with the current clean checkout.")
+        print("Source remains at its current revision; package update may continue without config changes.")
+        return old_revision, old_revision, False
+
+    status = repo_git("status", "--porcelain=v1", "--untracked-files=normal")
+    if status.returncode or status.stdout:
+        raise ConfigError("source checkout changed during review; fast-forward was not attempted")
+    merged = repo_git("-c", "core.hooksPath=/dev/null", "merge", "--ff-only", target)
+    if merged.returncode:
+        raise ConfigError(merged.stderr.strip() or "clean source fast-forward failed")
+    new_revision = repo_git("rev-parse", "HEAD")
+    clean = repo_git("status", "--porcelain=v1", "--untracked-files=normal")
+    if new_revision.returncode or clean.returncode or clean.stdout:
+        raise ConfigError("source fast-forward result could not be verified as clean")
+    new_revision_id = new_revision.stdout.strip()
+    update_log(log, f"Source fast-forward completed: {old_revision} -> {new_revision_id}")
+    print(f"Source fast-forwarded: {old_revision[:12]} -> {new_revision_id[:12]}")
+    print(f"If you need to restore the prior source, its revision is recorded in {log.parent / 'source-revisions.txt'}.")
+    return old_revision, new_revision_id, True
+
+
+def command_update(vm_mode: bool = False) -> int:
+    """Run an explicitly confirmed Pacman update with a recovery checkpoint."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ConfigError("hexen update requires an interactive terminal")
+    for tool in (
+        "sudo", "snapper", "tar", "findmnt", "btrfs", "pacman", "script",
+        "find", "sha256sum", "sync", "systemctl",
+    ):
+        if not shutil.which(tool):
+            raise ConfigError(f"required update tool is missing: {tool}")
+
+    checkpoint_root = update_checkpoint_root()
+    lock_path = checkpoint_root / ".update.lock"
+    if lock_path.is_symlink():
+        raise ConfigError(f"refusing symlinked update lock: {lock_path}")
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    lock_info = os.fstat(lock_fd)
+    if lock_info.st_uid != os.getuid() or lock_info.st_mode & 0o077:
+        os.close(lock_fd)
+        raise ConfigError(f"update lock must be private and user-owned: {lock_path}")
+    checkpoint: Path | None = None
+    log: Path | None = None
+    try:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ConfigError("another Hexen update is already running") from error
+
+        now = datetime.now(timezone.utc)
+        checkpoint = checkpoint_root / (now.strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(4))
+        checkpoint.mkdir(mode=0o700)
+        checkpoint_mode = checkpoint.stat().st_mode
+        if checkpoint_mode & 0o077 or checkpoint_mode & 0o700 != 0o700:
+            raise ConfigError(f"update run directory must be private and user-writable: {checkpoint}")
+        log = checkpoint / "update.log"
+        log.touch(mode=0o600)
+        log.chmod(0o600)
+        revision_result = repo_git("rev-parse", "HEAD")
+        if revision_result.returncode:
+            raise ConfigError(revision_result.stderr.strip() or "cannot read source revision")
+        revision = revision_result.stdout.strip()
+        update_log(log, f"Hexen update started {now.isoformat()}\nSource revision: {revision}")
+
+        ensure_no_pacman_lock()
+
+        git_status = repo_git("status", "--porcelain=v1", "--untracked-files=normal")
+        if git_status.returncode:
+            raise ConfigError(git_status.stderr.strip() or "cannot inspect repository before update")
+        if git_status.stdout:
+            changes = "\n".join(f"  {line}" for line in git_status.stdout.splitlines())
+            raise ConfigError("repository has local changes; review or commit them before updating:\n" + changes)
+        upstream = repo_git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+        if upstream.returncode == 0:
+            counts = repo_git("rev-list", "--left-right", "--count", f"HEAD...{upstream.stdout.strip()}")
+            if counts.returncode:
+                raise ConfigError(counts.stderr.strip() or "cannot compare repository with cached upstream")
+            ahead, behind = (int(value) for value in counts.stdout.split())
+            if ahead and behind:
+                raise ConfigError("repository has diverged from cached upstream; reconcile it manually before updating")
+
+        root_type = subprocess.run(["findmnt", "-n", "-o", "FSTYPE", "/"], text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        root_fsroot = subprocess.run(["findmnt", "-n", "-o", "FSROOT", "--mountpoint", "/"], text=True,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        home_type = subprocess.run(["findmnt", "-n", "-o", "FSTYPE", "--target", str(Path.home())], text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        home_fsroot = subprocess.run(["findmnt", "-n", "-o", "FSROOT", "--target", str(Path.home())], text=True,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        boot_type = subprocess.run(["findmnt", "-n", "-o", "FSTYPE", "--mountpoint", "/boot"], text=True,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if root_type.returncode or root_type.stdout.strip() != "btrfs":
+            raise ConfigError("update checkpoint requires the supported Btrfs root filesystem")
+        if (root_fsroot.returncode or home_type.returncode or home_fsroot.returncode
+                or home_type.stdout.strip() != "btrfs"
+                or home_fsroot.stdout.strip() == root_fsroot.stdout.strip()):
+            raise ConfigError("update checkpoint requires /home on a separate Btrfs subvolume")
+        if boot_type.returncode or boot_type.stdout.strip().lower() not in {"vfat", "fat", "fat32"}:
+            raise ConfigError("update checkpoint requires a mounted FAT ESP at /boot")
+        if not Path("/etc/snapper/configs/root").is_file():
+            raise ConfigError("Snapper root configuration is missing")
+
+        boot_bytes = sum(path.stat().st_size for path in Path("/boot").rglob("*") if path.is_file())
+        checkpoint_free = shutil.disk_usage(checkpoint_root).free
+        boot_free = shutil.disk_usage("/boot").free
+        reserve = 64 * 1024 * 1024
+        if checkpoint_free < boot_bytes + reserve:
+            raise ConfigError("not enough free space under /home for the matching /boot archive")
+        if boot_free < max(reserve, boot_bytes):
+            raise ConfigError("not enough free space on /boot for a kernel/initramfs update")
+
+        root_free = shutil.disk_usage("/").free
+        print(f"Checkpoint directory: {checkpoint}")
+        print(f"Free space: root {root_free // (1024**3)} GiB; /home {checkpoint_free // (1024**3)} GiB; /boot {boot_free // (1024**2)} MiB")
+        print("After confirmation, Hexen fetches the configured Git remote, shows any incoming commits/diff, then asks separately before a fast-forward.")
+        print("It then creates a permanent Snapper root snapshot, archives /boot, and runs sudo pacman -Syu.")
+        print("The root snapshot does not include /home. Keep this archive and snapshot together; they are not an off-device backup.")
+        print("Close other package managers first; Hexen checks Pacman's lock but does not block other package tools.")
+        try:
+            answer = input("Continue with the update? [y/N] ").strip().lower()
+        except EOFError as error:
+            raise ConfigError("confirmation input closed; no checkpoint or package update was made") from error
+        if answer not in {"y", "yes"}:
+            update_log(log, "Update cancelled before snapshot creation.")
+            print("Update cancelled; no snapshot or package transaction was made.")
+            return 0
+
+        source_before, source_after, source_changed = refresh_repository(log)
+        (checkpoint / "source-revisions.txt").write_text(
+            f"before {source_before}\nafter  {source_after}\n", encoding="ascii"
+        )
+        ensure_no_pacman_lock()
+        packages_before = update_capture(["pacman", "-Q"], log).stdout
+        (checkpoint / "packages-before.txt").write_text(packages_before, encoding="utf-8")
+        (checkpoint / "mounts.json").write_text(
+            update_capture(["findmnt", "--json"], log).stdout, encoding="utf-8"
+        )
+        (checkpoint / "subvolumes.txt").write_text(
+            update_capture(["sudo", "btrfs", "subvolume", "list", "/"], log).stdout,
+            encoding="utf-8",
+        )
+        update_capture(["tar", "-C", "/boot", "-cpf", str(checkpoint / "boot.tar"), "."], log)
+        boot_hashes = update_capture(["find", "/boot", "-type", "f", "-exec", "sha256sum", "{}", "+"], log)
+        (checkpoint / "boot.sha256").write_text(boot_hashes.stdout, encoding="utf-8")
+        archive_hash = update_capture(["sha256sum", str(checkpoint / "boot.tar")], log)
+        (checkpoint / "boot.tar.sha256").write_text(archive_hash.stdout, encoding="utf-8")
+        ensure_no_pacman_lock()
+        snapshot = update_capture(
+            ["sudo", "snapper", "-c", "root", "create", "--type", "single",
+             "--description", f"hexen-before-update-{now.strftime('%Y%m%dT%H%M%SZ')}",
+             "--userdata", "important=yes", "--print-number"], log,
+        ).stdout.strip()
+        if not snapshot.isdigit():
+            raise ConfigError("Snapper did not return a snapshot number; refusing to run Pacman")
+        (checkpoint / "snapshot-number").write_text(snapshot + "\n", encoding="ascii")
+        ensure_no_pacman_lock()
+        packages_at_snapshot = update_capture(["pacman", "-Q"], log).stdout
+        if packages_at_snapshot != packages_before:
+            raise ConfigError("installed package set changed while the recovery checkpoint was being created")
+        (checkpoint / "packages-at-snapshot.txt").write_text(packages_at_snapshot, encoding="utf-8")
+        update_capture(["sync"], log)
+        print(f"Recovery checkpoint ready: Snapper snapshot {snapshot} and {checkpoint / 'boot.tar'}")
+
+        ensure_no_pacman_lock()
+        pacman_command = shlex.join(["sudo", "pacman", "-Syu"])
+        update_log(log, "$ sudo pacman -Syu (interactive transcript follows)")
+        transaction = subprocess.run(
+            ["script", "--quiet", "--flush", "--return", "--append", "--command", pacman_command, str(log)],
+            check=False,
+        )
+        if transaction.returncode:
+            update_log(log, f"Pacman transaction failed with status {transaction.returncode}")
+            print(f"Update failed with status {transaction.returncode}; checkpoint retained at {checkpoint}")
+            return transaction.returncode or 1
+
+        update_log(log, "Pacman transaction completed successfully; post-update inspection follows.")
+        after = update_capture(["pacman", "-Q"], log)
+        (checkpoint / "packages-after.txt").write_text(after.stdout, encoding="utf-8")
+        effective_package_manifest = after.stdout
+        migrations_pending = False
+        migration_problem = False
+        try:
+            migrations = load_migrations()
+            if migrations:
+                state = migration_state_root()
+                pending = pending_migrations(state, migrations)
+                if pending:
+                    migrations_pending = True
+                    print("Pending user migrations:")
+                    for migration in pending:
+                        print(f"  {migration['id']}: {migration['description']}")
+                    try:
+                        answer = input("Run these migrations as the current user now? [y/N] ").strip().lower()
+                    except EOFError:
+                        answer = ""
+                    if answer in {"y", "yes"}:
+                        completed, remaining = run_migrations(log)
+                        migrations_pending = remaining > 0
+                        migration_problem = remaining > 0
+                        update_log(log, f"Post-update migrations: {completed} completed, {remaining} pending.")
+                    else:
+                        update_log(log, "Post-update migrations declined; they remain pending for `hexen migrate`.")
+                        print("Migrations remain pending; run `hexen migrate` after reviewing this update.")
+        except (ConfigError, OSError, UnicodeError) as error:
+            migration_problem = True
+            migrations_pending = True
+            update_log(log, f"Post-update migrations could not be inspected or run: {error}")
+            print(f"Migrations could not be inspected or run: {error}")
+        pacnew = update_capture(
+            ["find", "/etc", "-type", "f", "(", "-name", "*.pacnew", "-o", "-name", "*.pacsave", ")", "-print"],
+            log,
+        )
+        failed_units = update_capture(["systemctl", "--failed", "--no-legend", "--plain"], log)
+        (checkpoint / "pacnew-pacsave.txt").write_text(pacnew.stdout, encoding="utf-8")
+        (checkpoint / "failed-units.txt").write_text(failed_units.stdout, encoding="utf-8")
+        running_modules = Path("/usr/lib/modules") / os.uname().release
+        try:
+            uptime = float(Path("/proc/uptime").read_text(encoding="ascii").split()[0])
+            boot_time = datetime.now().timestamp() - uptime
+            newer_modules = [
+                path.name for path in running_modules.parent.iterdir()
+                if path.is_dir() and path != running_modules and path.stat().st_mtime > boot_time
+            ] if running_modules.is_dir() else []
+            reboot_signal = (
+                "possible reboot pending: running kernel module tree is missing"
+                if not running_modules.is_dir()
+                else "possible kernel reboot pending: " + ", ".join(sorted(newer_modules))
+                if newer_modules
+                else "no kernel reboot signal detected; service-level restart needs are not checked"
+            )
+        except (OSError, ValueError, IndexError) as error:
+            reboot_signal = f"kernel reboot status unavailable: {error}"
+        (checkpoint / "reboot-status.txt").write_text(reboot_signal + "\n", encoding="utf-8")
+        print(f"System package update completed. Log and recovery checkpoint: {checkpoint}")
+        if pacnew.stdout.strip():
+            print("Review .pacnew/.pacsave candidates listed in pacnew-pacsave.txt.")
+        if failed_units.stdout.strip():
+            print("Failed system units were recorded in failed-units.txt; review them before relying on the system.")
+        print(f"Reboot check: {reboot_signal}")
+        convergence_status = "declined-before-preview"
+        convergence_failed = False
+        if not migrations_pending and not migration_problem:
+            try:
+                answer = input("Review Ansible configuration convergence now? [y/N] ").strip().lower()
+            except EOFError:
+                answer = ""
+            if answer in {"y", "yes"}:
+                convergence_log = checkpoint / "provisioner.log"
+                convergence_status = "completed"
+                update_log(log, f"Starting reviewed Ansible convergence (VM mode: {vm_mode}).")
+                try:
+                    result_code = command_apply(vm_mode, review=True, log=convergence_log)
+                    if result_code == 3:
+                        convergence_status = "declined-or-cancelled"
+                    elif result_code:
+                        convergence_status = f"failed-{result_code}"
+                        convergence_failed = True
+                    update_log(log, f"Ansible convergence result: {convergence_status}; transcript: {convergence_log}")
+                except (ConfigError, OSError) as error:
+                    convergence_status = f"could-not-start: {error}"
+                    convergence_failed = True
+                    update_log(log, f"Ansible convergence could not start: {error}")
+
+                post_units = None
+                try:
+                    post_packages = update_capture(["pacman", "-Q"], log)
+                    (checkpoint / "packages-after-convergence.txt").write_text(post_packages.stdout, encoding="utf-8")
+                    effective_package_manifest = post_packages.stdout
+                    post_units = update_capture(["systemctl", "--failed", "--no-legend", "--plain"], log)
+                    (checkpoint / "failed-units-after-convergence.txt").write_text(post_units.stdout, encoding="utf-8")
+                except (ConfigError, OSError, UnicodeError) as error:
+                    convergence_failed = True
+                    convergence_status += "+post-check-failed"
+                    update_log(log, f"Post-convergence inspection failed: {error}")
+                    print(f"Post-convergence inspection failed: {error}")
+                if post_units and post_units.stdout.strip():
+                    print("Failed system units after convergence were recorded in failed-units-after-convergence.txt.")
+        else:
+            convergence_status = "skipped-pending-migrations"
+            update_log(log, "Ansible convergence skipped because user migrations remain pending or failed.")
+        (checkpoint / "convergence-status.txt").write_text(convergence_status + "\n", encoding="utf-8")
+        print(f"Ansible convergence: {convergence_status}")
+        source_checks = source_status_lines(effective_package_manifest)
+        (checkpoint / "source-checks.txt").write_text("\n".join(source_checks) + "\n", encoding="utf-8")
+        update_log(log, "Application source checks:\n" + "\n".join(source_checks))
+        for line in source_checks:
+            print(line)
+        service_status, service_failed = offer_service_restart_review(log)
+        (checkpoint / "service-check-status.txt").write_text(service_status + "\n", encoding="utf-8")
+        try:
+            final_units = update_capture(["systemctl", "--failed", "--no-legend", "--plain"], log)
+            (checkpoint / "failed-units-final.txt").write_text(final_units.stdout, encoding="utf-8")
+            if final_units.stdout.strip():
+                print("Failed units after service review are recorded in failed-units-final.txt.")
+        except (ConfigError, OSError, UnicodeError) as error:
+            service_failed = True
+            update_log(log, f"Final service-state capture failed: {error}")
+            print(f"Final service-state capture failed: {error}")
+        print("No reboot was performed. Review service-restart-review.log and failed-units-final.txt; if Ansible ran, also review provisioner.log. Manual application sources remain separate.")
+        if migrations_pending:
+            print("User migrations remain pending; run `hexen migrate` after reviewing the package update.")
+        if not source_changed:
+            print("No repository fast-forward was applied during this update.")
+        return 1 if migration_problem or migrations_pending or convergence_failed or service_failed else 0
+    except ConfigError as error:
+        if log is not None and checkpoint is not None:
+            update_log(log, f"Update stopped before completion: {error}")
+            print(f"Update stopped; inspect the log and any partial checkpoint at {checkpoint}")
+        raise
+    finally:
+        os.close(lock_fd)
+
+
 def command_diff() -> int:
     status = repo_git("status", "--short", "--untracked-files=normal")
     if status.returncode:
@@ -182,12 +1041,19 @@ def command_diff() -> int:
     return 0
 
 
-def command_apply(vm_mode: bool) -> int:
+def command_apply(vm_mode: bool, review: bool = False, log: Path | None = None) -> int:
     provisioner = REPO_ROOT / "install/provision.sh"
     if provisioner.is_symlink() or not provisioner.is_file() or not os.access(provisioner, os.X_OK):
         raise ConfigError(f"checked provisioner is missing or unsafe: {provisioner}")
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ConfigError("config apply requires an interactive terminal")
+    if review:
+        help_result = subprocess.run(
+            [str(provisioner), "--help"], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False,
+        )
+        if help_result.returncode or "--review" not in help_result.stdout:
+            raise ConfigError("the checked provisioner does not support reviewed convergence")
 
     profile = local_setting(PROFILE_RE, "common")
     if profile not in PROFILES:
@@ -207,12 +1073,25 @@ def command_apply(vm_mode: bool) -> int:
         print("Working-tree changes that the provisioner will use:")
         for line in changes.stdout.splitlines():
             print(f"  {line}")
-    print("The provisioner will show its impact summary and ask before applying.")
+    if review:
+        print("The provisioner will run an advisory Ansible check/diff and ask again before applying.")
+    else:
+        print("The provisioner will show its impact summary and ask before applying.")
     print("Use Ctrl+C to stop before or during the interactive process.\n")
     command = [str(provisioner)]
     if vm_mode:
         command.append("--vm")
-    return subprocess.run(command, cwd=REPO_ROOT, check=False).returncode
+    if review:
+        command.append("--review")
+    if log is None:
+        return subprocess.run(command, cwd=REPO_ROOT, check=False).returncode
+    result = subprocess.run(
+        ["script", "--quiet", "--flush", "--return", "--append", "--command",
+         shlex.join(command), str(log)],
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    return result.returncode
 
 
 BACKUP_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{8}$")
@@ -447,6 +1326,12 @@ def command_restore(backup_id: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="hexen", description="Hexen workstation tools")
     groups = parser.add_subparsers(dest="group", required=True)
+    update = groups.add_parser("update", help="inspect status or run a confirmed system package update")
+    update.add_argument("--check", action="store_true",
+                        help="show available updates without changing anything")
+    update.add_argument("--vm", action="store_true",
+                        help="use nested-VM network settings for optional Ansible convergence")
+    groups.add_parser("migrate", help="review and run pending per-user Hexen migrations")
     config = groups.add_parser("config", help="inspect managed configuration")
     config_commands = config.add_subparsers(dest="command", required=True)
     config_commands.add_parser("status", help="show profile, repo state, and managed links")
@@ -460,6 +1345,10 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.group == "update":
+            return command_update_check() if args.check else command_update(args.vm)
+        if args.group == "migrate":
+            return command_migrate()
         if args.group == "config" and args.command == "status":
             return command_status()
         if args.group == "config" and args.command == "diff":
