@@ -1,4 +1,23 @@
 ---
+- name: Inspect the existing display-manager alias
+  ansible.builtin.stat:
+    path: /etc/systemd/system/display-manager.service
+    follow: false
+  register: _desktop_display_manager_alias
+
+- name: Refuse to replace another display manager
+  ansible.builtin.assert:
+    that:
+      - >-
+        (not _desktop_display_manager_alias.stat.exists and
+         not (_desktop_display_manager_alias.stat.islnk | default(false))) or
+        ((_desktop_display_manager_alias.stat.islnk | default(false)) and
+         _desktop_display_manager_alias.stat.lnk_source == '/usr/lib/systemd/system/sddm.service')
+    fail_msg: >-
+      Desktop preflight: another display manager is already configured. Review
+      /etc/systemd/system/display-manager.service before selecting SDDM; Hexen
+      will not replace it automatically.
+
 - name: Validate the desktop launcher selection
   ansible.builtin.assert:
     that:

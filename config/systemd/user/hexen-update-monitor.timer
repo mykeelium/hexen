@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Hexen Arch package update discovery
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30min
+Unit=hexen-update-monitor.service
+
+[Install]
+WantedBy=timers.target

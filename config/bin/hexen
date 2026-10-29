@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass, field
 import fcntl
 from datetime import datetime, timezone
 import hashlib
@@ -41,6 +42,50 @@ LOCAL_MANUAL_PACKAGES = (
 
 class ConfigError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class UpdateCandidate:
+    name: str
+    old: str
+    new: str
+    repo: str
+
+
+@dataclass(frozen=True)
+class UpdateDiscovery:
+    checked_at: str
+    status: str
+    detail: str
+    report_path: Path
+    packages: tuple[UpdateCandidate, ...]
+    exit_code: int
+
+
+@dataclass
+class UpdateReviewState:
+    """Presentation-independent package choices and review outcome."""
+    discovery: UpdateDiscovery
+    decisions: dict[str, str] = field(default_factory=dict)
+
+    def record_choice(self, candidate: UpdateCandidate, decision: str) -> None:
+        if candidate not in self.discovery.packages:
+            raise ConfigError("package is not part of this update review")
+        if decision not in {"reviewed", "wanted", "follow-up", "undecided"}:
+            raise ConfigError(f"unsupported package review decision: {decision}")
+        record_update_review_choice(self.discovery, candidate, decision)
+        self.decisions[candidate.name] = decision
+
+    def record_outcome(self, decision: str) -> None:
+        if decision not in {"interrupted", "cancelled", "handoff-to-full-update"}:
+            raise ConfigError(f"unsupported update review outcome: {decision}")
+        append_update_evidence(private_update_state(), {
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "event": "review-summary", "review_id": self.discovery.checked_at,
+            "decision": decision, "packages": self.decisions,
+            "completed_packages": len(self.decisions),
+            "total_packages": len(self.discovery.packages),
+        })
 
 
 def source_status_lines(package_manifest: str | None) -> list[str]:
@@ -218,6 +263,11 @@ def expected_links(home: Path) -> dict[Path, Path]:
         expected[config / "systemd/user/hexen-elephant.service"] = (
             REPO_ROOT / "config/systemd/user/hexen-elephant.service"
         )
+    for unit in ("hexen-update-monitor.service", "hexen-update-monitor.timer"):
+        expected[config / "systemd/user" / unit] = REPO_ROOT / "config/systemd/user" / unit
+    expected[config / "systemd/user/timers.target.wants/hexen-update-monitor.timer"] = (
+        REPO_ROOT / "config/systemd/user/hexen-update-monitor.timer"
+    )
     if local_setting(REMOTE_RE, "false").lower() == "true":
         expected[home / ".local/bin/hexen-remote"] = REPO_ROOT / "config/bin/hexen-remote"
         expected[config / "systemd/user/hexen-remote.service"] = (
@@ -545,6 +595,434 @@ def run_migrations(log: Path) -> tuple[int, int]:
         os.close(lock_fd)
 
 
+def private_update_state() -> Path:
+    """Create and validate private monitoring state directories."""
+    state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+    root = state_home / "hexen/updates"
+    if state_home.is_symlink():
+        raise ConfigError(f"refusing symlinked XDG state directory: {state_home}")
+    state_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not state_home.is_dir() or state_home.stat().st_uid != os.getuid():
+        raise ConfigError(f"XDG state directory must be a user-owned directory: {state_home}")
+    namespace = state_home / "hexen"
+    for directory in (namespace, root):
+        if directory.is_symlink():
+            raise ConfigError(f"refusing symlinked update state directory: {directory}")
+        directory.mkdir(mode=0o700, exist_ok=True)
+        info = directory.stat()
+        if not directory.is_dir() or info.st_uid != os.getuid():
+            raise ConfigError(f"update state directory must be a user-owned directory: {directory}")
+        if directory == namespace and info.st_mode & 0o022:
+            raise ConfigError(f"Hexen state namespace must not be group/world-writable: {directory}")
+        if directory == root and info.st_mode & 0o077:
+            raise ConfigError(f"update state directory must be private and user-owned: {directory}")
+    return root
+
+
+def append_update_evidence(root: Path, event: dict[str, object]) -> None:
+    """Append timestamped owner-visible evidence to a private JSONL file."""
+    evidence = root / "evidence.jsonl"
+    if evidence.is_symlink():
+        raise ConfigError(f"refusing symlinked update evidence file: {evidence}")
+    fd = os.open(evidence, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ConfigError(f"update evidence file must be private and user-owned: {evidence}")
+        with os.fdopen(fd, "a", encoding="utf-8") as stream:
+            fd = -1
+            stream.write(json.dumps(event, sort_keys=True) + "\n")
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def isolated_package_repositories(database: Path, names: list[str]) -> dict[str, str]:
+    """Resolve candidate repositories from checkupdates' isolated sync database."""
+    if not names:
+        return {}
+    pacman = shutil.which("pacman")
+    if not pacman:
+        raise ConfigError("pacman is unavailable; cannot resolve candidate repositories")
+    env = os.environ.copy()
+    env["LC_ALL"] = "C"
+    result = subprocess.run(
+        [pacman, "--color", "never", "--dbpath", str(database), "-Si", *names],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, env=env,
+    )
+    if result.returncode:
+        raise ConfigError(result.stderr.strip() or "Pacman could not read candidate metadata from the isolated database")
+    repositories: dict[str, str] = {}
+    current: dict[str, str] = {}
+
+    def save_record() -> None:
+        package_name = current.get("Name", "")
+        repository = current.get("Repository", "")
+        if package_name and repository:
+            repositories.setdefault(package_name, repository)
+
+    for line in result.stdout.splitlines() + [""]:
+        if not line.strip():
+            save_record()
+            current = {}
+            continue
+        key, separator, value = line.partition(":")
+        if separator and key.strip() in {"Name", "Repository"}:
+            current[key.strip()] = value.strip()
+    missing = sorted(set(names) - repositories.keys())
+    if missing:
+        raise ConfigError("repository metadata missing from isolated database for: " + ", ".join(missing))
+    return repositories
+
+
+def command_update_monitor(notify: bool = True) -> UpdateDiscovery:
+    """Run a non-installing check against checkupdates' isolated database."""
+    root = private_update_state()
+    now = datetime.now(timezone.utc)
+    checked_at = now.isoformat(timespec="seconds")
+    checkupdates = shutil.which("checkupdates")
+    packages: list[dict[str, str]] = []
+    status = "failed"
+    detail = ""
+    if not checkupdates:
+        detail = "checkupdates is not installed; install pacman-contrib through the reviewed provisioner."
+    else:
+        database = root / "checkupdates-db"
+        if database.is_symlink():
+            raise ConfigError(f"refusing symlinked isolated package database: {database}")
+        database.mkdir(mode=0o700, exist_ok=True)
+        if database.stat().st_uid != os.getuid() or database.stat().st_mode & 0o077:
+            raise ConfigError(f"isolated package database must be private and user-owned: {database}")
+        env = os.environ.copy()
+        env["CHECKUPDATES_DB"] = str(database)
+        try:
+            result = subprocess.run(
+                [checkupdates, "--nocolor"], text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False, env=env, timeout=900,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            result = None
+            detail = f"checkupdates could not complete: {error}"
+        if result is not None:
+            if result.returncode == 2 and not result.stdout.strip():
+                status = "up-to-date"
+            elif result.returncode == 0:
+                pattern = re.compile(r"^(?P<name>[^\s]+)\s+(?P<old>\S+)\s+->\s+(?P<new>\S+)\s*$")
+                for row in result.stdout.splitlines():
+                    match = pattern.fullmatch(row.strip())
+                    if not match:
+                        detail = f"Unexpected checkupdates output: {row[:300]}"
+                        break
+                    packages.append(match.groupdict())
+                if packages and not detail:
+                    status = "updates-available"
+                elif not detail:
+                    detail = "checkupdates reported updates but produced no package rows."
+            else:
+                detail = (result.stderr.strip() or result.stdout.strip() or f"checkupdates exited {result.returncode}")[:1000]
+        if packages and not detail:
+            try:
+                repositories = isolated_package_repositories(database, [package["name"] for package in packages])
+                for package in packages:
+                    package["repo"] = repositories[package["name"]]
+            except (ConfigError, OSError, subprocess.SubprocessError) as error:
+                status = "failed"
+                detail = f"Could not resolve candidate repositories from the isolated database: {error}"
+        if status in {"up-to-date", "updates-available"}:
+            sync_databases = [
+                path for path in database.rglob("*.db")
+                if path.parent.name == "sync" and path.is_file() and not path.is_symlink()
+            ]
+            if not sync_databases:
+                status = "stale"
+                detail = "The isolated sync database freshness could not be established; update availability is unknown."
+            else:
+                newest_metadata = max(path.stat().st_mtime for path in sync_databases)
+                age_hours = max(0, (datetime.now().timestamp() - newest_metadata) / 3600)
+                if age_hours > 24:
+                    status = "stale"
+                    detail = f"The isolated sync metadata is {age_hours:.1f} hours old; update availability is unknown."
+
+    reports = root / "reports"
+    if reports.is_symlink():
+        raise ConfigError(f"refusing symlinked reports directory: {reports}")
+    reports.mkdir(mode=0o700, exist_ok=True)
+    if reports.stat().st_uid != os.getuid() or reports.stat().st_mode & 0o077:
+        raise ConfigError(f"update reports directory must be private and user-owned: {reports}")
+    report_path = reports / (now.strftime("%Y%m%dT%H%M%SZ") + ".md")
+    if report_path.is_symlink():
+        raise ConfigError(f"refusing symlinked update report: {report_path}")
+    lines = [
+        "# Hexen package update review", "", f"- Check time: {checked_at}",
+        f"- Result: **{status}**",
+    ]
+    if detail:
+        lines.append(f"- Details: {detail}")
+    lines.extend([
+        "", "Discovery uses checkupdates' separate package database. No packages were downloaded or installed and the system Pacman database was not refreshed.",
+        "", "This discovery does not download packages or verify candidate signatures. The confirmed Pacman transaction records signature results in its transcript. A valid package signature establishes the trusted signer for that artifact, not that its source or build is harmless. This report does not compare source/build provenance or package file inventories; those are **not compared**.",
+        "", "For official repository packages, review the Arch packaging recipe history and package page.", "",
+    ])
+    if packages:
+        lines.extend(["| Package | Installed | Candidate | Repository | Arch package | Recipe history |", "|---|---:|---:|---|---|---|"])
+        for package in packages:
+            name, repo = package["name"], package.get("repo", "")
+            package_page = f"[package](https://archlinux.org/packages/{repo}/x86_64/{name}/)" if repo else "not resolved"
+            lines.append(
+                f"| `{name}` | `{package['old']}` | `{package['new']}` | `{repo}` | "
+                f"{package_page} | "
+                f"[recipe commits](https://gitlab.archlinux.org/archlinux/packaging/packages/{name}/-/commits/main) |"
+            )
+    elif status == "up-to-date":
+        lines.append("No official Arch package updates were listed at this check time.")
+    else:
+        lines.append("Update availability is unknown because the check did not complete successfully.")
+    lines.extend([
+        "", "Run `hexen update-monitor review` in a terminal for package-by-package review and an explicit handoff to `hexen update`.",
+        "AUR, Flatpak, vendor, AppImage, Walker/Elephant, Neovim plugin, and language-tool updates are outside this Pacman report.", "",
+    ])
+    content = "\n".join(lines)
+    report_path.write_text(content, encoding="utf-8")
+    report_path.chmod(0o600)
+    latest = root / "latest.md"
+    if latest.is_symlink():
+        raise ConfigError(f"refusing symlinked latest report path: {latest}")
+    latest.write_text(content, encoding="utf-8")
+    latest.chmod(0o600)
+    append_update_evidence(root, {
+        "time": checked_at, "event": "discovery", "status": status,
+        "packages": packages, "report": str(report_path), "detail": detail,
+    })
+    print(f"Update discovery: {status}\nReport: {report_path}")
+    if detail:
+        print(f"Details: {detail}")
+
+    notifier = shutil.which("notify-send") if notify else None
+    if notifier and status in {"updates-available", "failed", "stale"}:
+        summary = f"{len(packages)} Arch package update(s) available" if status == "updates-available" else f"Hexen update check: {status}"
+        rows = [
+            f"{package['name']} {package['old']} → {package['new']} ({package['repo']})"
+            for package in packages[:8]
+        ]
+        if len(packages) > len(rows):
+            rows.append(f"and {len(packages) - len(rows)} more; see the full report")
+        rows.extend([f"Checked: {checked_at}", f"<a href=\"{report_path.absolute().as_uri()}\">Open full report</a>",
+                     "Run `hexen update-monitor review` in a terminal to review and approve a full update."])
+        body = "\n".join(rows) if packages else "\n".join([detail, f"Checked: {checked_at}",
+                                                               f"<a href=\"{report_path.absolute().as_uri()}\">Open full report</a>"])
+        notification = subprocess.run(
+            [notifier, "--app-name=Hexen", "--urgency=critical" if status == "failed" else "--urgency=normal",
+             summary, body],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+        )
+        append_update_evidence(root, {
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "event": "notification", "status": "sent" if notification.returncode == 0 else "unavailable",
+            "detail": notification.stderr.strip()[:500],
+        })
+    elif notify and status in {"updates-available", "failed", "stale"}:
+        append_update_evidence(root, {
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "event": "notification", "status": "unavailable", "detail": "notify-send is not installed",
+        })
+    return UpdateDiscovery(
+        checked_at=checked_at,
+        status=status,
+        detail=detail,
+        report_path=report_path,
+        packages=tuple(
+            UpdateCandidate(
+                name=package["name"], old=package["old"],
+                new=package["new"], repo=package.get("repo", ""),
+            )
+            for package in packages
+        ),
+        exit_code=0 if status in {"updates-available", "up-to-date"} else 1,
+    )
+
+
+def update_review_links(candidate: UpdateCandidate) -> tuple[str, str]:
+    """Return direct official package and recipe-history links for a candidate."""
+    package = f"https://archlinux.org/packages/{candidate.repo}/x86_64/{candidate.name}/"
+    recipe = f"https://gitlab.archlinux.org/archlinux/packaging/packages/{candidate.name}/-/commits/main"
+    return package, recipe
+
+
+def record_update_review_choice(
+    discovery: UpdateDiscovery, candidate: UpdateCandidate, decision: str,
+) -> None:
+    """Append one package decision to the private update evidence stream."""
+    if decision not in {"reviewed", "wanted", "follow-up", "undecided"}:
+        raise ConfigError(f"unsupported package review decision: {decision}")
+    append_update_evidence(private_update_state(), {
+        "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "event": "package-review",
+        "review_id": discovery.checked_at,
+        "report": str(discovery.report_path),
+        "package": candidate.name,
+        "installed_version": candidate.old,
+        "candidate_version": candidate.new,
+        "repository": candidate.repo,
+        "decision": decision,
+    })
+
+
+def command_update_review(vm_mode: bool = False) -> int:
+    """Review discovered packages interactively before optional full update."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ConfigError("hexen update-monitor review requires an interactive terminal")
+
+    discovery = command_update_monitor(notify=False)
+    if discovery.status != "updates-available":
+        if discovery.status == "up-to-date":
+            print("No official Arch package updates are available to review.")
+        else:
+            print(f"Package review was not started: discovery status is {discovery.status}.")
+            if discovery.detail:
+                print(f"Details: {discovery.detail}")
+        return discovery.exit_code
+
+    review = UpdateReviewState(discovery)
+    print("\nPackage-by-package review")
+    print("Choices record review intent only; Arch updates must use a full system upgrade.")
+    for index, candidate in enumerate(discovery.packages, start=1):
+        package_page, recipe_history = update_review_links(candidate)
+        print(f"\n[{index}/{len(discovery.packages)}] {candidate.name}")
+        print(f"  Installed: {candidate.old}")
+        print(f"  Candidate: {candidate.new}")
+        print(f"  Repository: {candidate.repo}")
+        print(f"  Package: {package_page}")
+        print(f"  Recipe history: {recipe_history}")
+        while True:
+            try:
+                answer = input(
+                    "  [r] reviewed, [w] want in upcoming update, [f] follow up, "
+                    "[s] leave undecided, [q] quit review: "
+                ).strip().lower()
+            except EOFError:
+                answer = "q"
+            except KeyboardInterrupt:
+                review.record_outcome("interrupted")
+                print("\nReview interrupted. Completed package choices were saved; no update was started.")
+                return 130
+            choices = {
+                "r": "reviewed", "w": "wanted", "f": "follow-up", "s": "undecided",
+            }
+            if answer in choices:
+                decision = choices[answer]
+                review.record_choice(candidate, decision)
+                print(f"  Recorded: {decision}")
+                break
+            if answer == "q":
+                review.record_outcome("interrupted")
+                print("Review stopped. Completed package choices were saved; no update was started.")
+                return 0
+            print("Choose r, w, f, s, or q.")
+
+    print("\nReview summary")
+    for candidate in discovery.packages:
+        print(f"  {candidate.name}: {review.decisions.get(candidate.name, 'undecided')}")
+    print("\nThe choices do not filter Pacman. Continuing starts the full-system update workflow,")
+    print("which has its own confirmation, source review, and recovery checkpoint.")
+    while True:
+        try:
+            answer = input("Continue to the full update workflow? [y/N] ").strip().lower()
+        except EOFError:
+            answer = ""
+        except KeyboardInterrupt:
+            review.record_outcome("interrupted")
+            print("\nReview interrupted. Completed package choices were saved; no update was started.")
+            return 130
+        if answer in {"y", "yes"}:
+            decision = "handoff-to-full-update"
+            break
+        if answer in {"", "n", "no"}:
+            decision = "cancelled"
+            break
+        print("Enter y to continue or n to cancel.")
+
+    review.record_outcome(decision)
+    if decision == "cancelled":
+        print("Update cancelled; no package changes were made.")
+        return 0
+    return command_update(vm_mode)
+
+
+def package_manifest_inventory(before: str, after: str, directory: Path) -> list[dict[str, str]]:
+    """Write package deltas and cache metadata without claiming unavailable comparisons."""
+    def parse_manifest(value: str) -> dict[str, str]:
+        parsed: dict[str, str] = {}
+        for row in value.splitlines():
+            columns = row.split(None, 1)
+            if len(columns) == 2:
+                parsed[columns[0]] = columns[1]
+        return parsed
+
+    old, new = parse_manifest(before), parse_manifest(after)
+    changes = [
+        {"name": name, "old_version": old.get(name, ""), "new_version": new.get(name, ""),
+         "change": "added" if name not in old else "removed" if name not in new else "updated",
+         "repository": "see update.log Pacman transaction transcript",
+         "signature": "see update.log Pacman transaction transcript; review package signer result",
+         "provenance": "not compared; inspect Arch packaging recipe and upstream source"}
+        for name in sorted(old.keys() | new.keys()) if old.get(name) != new.get(name)
+    ]
+    (directory / "package-changes.json").write_text(json.dumps(changes, indent=2) + "\n", encoding="utf-8")
+    (directory / "package-changes.json").chmod(0o600)
+    cache = Path("/var/cache/pacman/pkg")
+    bsdtar = shutil.which("bsdtar")
+    for item in changes:
+        name = item["name"]
+        for side, version in (("old", item["old_version"]), ("new", item["new_version"])):
+            if not version:
+                continue
+            matches = sorted(
+                path for path in cache.glob(f"{name}-{version}-*.pkg.tar.*")
+                if path.is_file() and not path.is_symlink() and not path.name.endswith(".sig")
+            ) if cache.is_dir() else []
+            if not matches or not bsdtar:
+                item[f"{side}_artifact"] = "not available in package cache; not compared"
+                continue
+            archive = matches[-1]
+            artifact_info: dict[str, str] = {"path": str(archive), "sha256": ""}
+            digest = hashlib.sha256()
+            with archive.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            artifact_info["sha256"] = digest.hexdigest()
+            for member in (".PKGINFO", ".BUILDINFO"):
+                extracted = subprocess.run(
+                    [bsdtar, "-xOf", str(archive), member], text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                if extracted.returncode == 0:
+                    target = directory / f"{name}-{version}-{member[1:]}.txt"
+                    target.write_text(extracted.stdout, encoding="utf-8")
+                    target.chmod(0o600)
+                    artifact_info[member] = str(target.name)
+            listing = subprocess.run(
+                [bsdtar, "-tf", str(archive)], text=True, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False,
+            )
+            if listing.returncode == 0:
+                target = directory / f"{name}-{version}-files.txt"
+                target.write_text(listing.stdout, encoding="utf-8")
+                target.chmod(0o600)
+                artifact_info["file_inventory"] = str(target.name)
+            item[f"{side}_artifact"] = json.dumps(artifact_info, sort_keys=True)
+        if not ("file_inventory" in item.get("old_artifact", "") and "file_inventory" in item.get("new_artifact", "")):
+            item["file_diff"] = "not compared; both old and new package archives were not available"
+        else:
+            old_file = directory / f"{name}-{item['old_version']}-files.txt"
+            new_file = directory / f"{name}-{item['new_version']}-files.txt"
+            old_rows = set(old_file.read_text(encoding="utf-8").splitlines())
+            new_rows = set(new_file.read_text(encoding="utf-8").splitlines())
+            item["file_diff"] = json.dumps({"added": sorted(new_rows - old_rows), "removed": sorted(old_rows - new_rows)})
+    (directory / "package-changes.json").write_text(json.dumps(changes, indent=2) + "\n", encoding="utf-8")
+    (directory / "package-changes.json").chmod(0o600)
+    return changes
+
+
 def command_migrate() -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ConfigError("hexen migrate requires an interactive terminal")
@@ -602,18 +1080,41 @@ def update_checkpoint_root() -> Path:
     root = recovery / "hexen-updates"
     if recovery.is_symlink() or root.is_symlink():
         raise ConfigError("refusing to create update checkpoints through a symlink")
-    recovery.mkdir(mode=0o700, exist_ok=True)
-    root.mkdir(mode=0o700, exist_ok=True)
-    for path in (recovery, root):
-        info = path.stat()
-        if not path.is_dir() or info.st_uid != os.getuid():
-            raise ConfigError(f"update checkpoint directory must be owned by this user: {path}")
-    mode = root.stat().st_mode
-    if mode & 0o077:
+    try:
+        recovery.mkdir(mode=0o700, exist_ok=True)
+    except PermissionError:
+        return private_update_checkpoint_root()
+    recovery_info = recovery.stat()
+    if not recovery.is_dir() or recovery_info.st_uid not in {0, os.getuid()} or recovery_info.st_mode & 0o022:
+        raise ConfigError(f"update recovery parent must be a real, non-group/world-writable directory: {recovery}")
+    if not root.exists():
+        try:
+            root.mkdir(mode=0o700)
+        except PermissionError:
+            return private_update_checkpoint_root()
+    return validate_update_checkpoint_root(root)
+
+
+def validate_update_checkpoint_root(root: Path) -> Path:
+    if root.is_symlink():
+        raise ConfigError(f"refusing symlinked update checkpoint directory: {root}")
+    info = root.stat()
+    if not root.is_dir() or info.st_uid != os.getuid():
+        raise ConfigError(f"update checkpoint directory must be owned by this user: {root}")
+    if info.st_mode & 0o077:
         raise ConfigError(f"update checkpoint directory must be private (mode 0700): {root}")
-    if mode & 0o700 != 0o700:
+    if info.st_mode & 0o700 != 0o700:
         raise ConfigError(f"update checkpoint directory must be writable by this user: {root}")
     return root
+
+
+def private_update_checkpoint_root() -> Path:
+    """Use private Hexen state when ~/recovery cannot hold user checkpoints."""
+    root = private_update_state() / "checkpoints"
+    if root.is_symlink():
+        raise ConfigError(f"refusing symlinked update checkpoint directory: {root}")
+    root.mkdir(mode=0o700, exist_ok=True)
+    return validate_update_checkpoint_root(root)
 
 
 def ensure_no_pacman_lock() -> None:
@@ -808,8 +1309,22 @@ def command_update(vm_mode: bool = False) -> int:
             raise ConfigError("confirmation input closed; no checkpoint or package update was made") from error
         if answer not in {"y", "yes"}:
             update_log(log, "Update cancelled before snapshot creation.")
+            try:
+                append_update_evidence(private_update_state(), {
+                    "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "event": "owner-review", "decision": "declined", "checkpoint": str(checkpoint),
+                })
+            except (ConfigError, OSError) as error:
+                update_log(log, f"Owner decision evidence could not be saved: {error}")
             print("Update cancelled; no snapshot or package transaction was made.")
             return 0
+        try:
+            append_update_evidence(private_update_state(), {
+                "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "event": "owner-review", "decision": "approved-update-workflow", "checkpoint": str(checkpoint),
+            })
+        except (ConfigError, OSError) as error:
+            update_log(log, f"Owner decision evidence could not be saved: {error}")
 
         source_before, source_after, source_changed = refresh_repository(log)
         (checkpoint / "source-revisions.txt").write_text(
@@ -856,12 +1371,34 @@ def command_update(vm_mode: bool = False) -> int:
         )
         if transaction.returncode:
             update_log(log, f"Pacman transaction failed with status {transaction.returncode}")
+            try:
+                append_update_evidence(private_update_state(), {
+                    "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "event": "update-result", "status": "failed", "exit_status": transaction.returncode,
+                    "checkpoint": str(checkpoint),
+                })
+            except (ConfigError, OSError) as error:
+                update_log(log, f"Update result evidence could not be saved: {error}")
             print(f"Update failed with status {transaction.returncode}; checkpoint retained at {checkpoint}")
             return transaction.returncode or 1
 
         update_log(log, "Pacman transaction completed successfully; post-update inspection follows.")
+        try:
+            append_update_evidence(private_update_state(), {
+                "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "event": "update-result", "status": "applied", "checkpoint": str(checkpoint),
+            })
+        except (ConfigError, OSError) as error:
+            update_log(log, f"Update result evidence could not be saved: {error}")
         after = update_capture(["pacman", "-Q"], log)
         (checkpoint / "packages-after.txt").write_text(after.stdout, encoding="utf-8")
+        try:
+            package_manifest_inventory(packages_before, after.stdout, checkpoint)
+        except (OSError, UnicodeError, subprocess.SubprocessError) as error:
+            update_log(log, f"Package provenance inventory incomplete; unavailable evidence is not compared: {error}")
+            (checkpoint / "package-changes-status.txt").write_text(
+                f"incomplete; inspect update.log; unavailable provenance is not compared: {error}\n", encoding="utf-8"
+            )
         effective_package_manifest = after.stdout
         migrations_pending = False
         migration_problem = False
@@ -1331,6 +1868,18 @@ def main() -> int:
                         help="show available updates without changing anything")
     update.add_argument("--vm", action="store_true",
                         help="use nested-VM network settings for optional Ansible convergence")
+    update_monitor = groups.add_parser(
+        "update-monitor",
+        help="check Arch updates daily without installing; save a private review report",
+    )
+    update_monitor_commands = update_monitor.add_subparsers(dest="monitor_command")
+    update_review = update_monitor_commands.add_parser(
+        "review", help="review each available package before the full update workflow",
+    )
+    update_review.add_argument(
+        "--vm", action="store_true",
+        help="use nested-VM network settings for optional Ansible convergence",
+    )
     groups.add_parser("migrate", help="review and run pending per-user Hexen migrations")
     config = groups.add_parser("config", help="inspect managed configuration")
     config_commands = config.add_subparsers(dest="command", required=True)
@@ -1347,6 +1896,10 @@ def main() -> int:
     try:
         if args.group == "update":
             return command_update_check() if args.check else command_update(args.vm)
+        if args.group == "update-monitor":
+            if args.monitor_command == "review":
+                return command_update_review(args.vm)
+            return command_update_monitor().exit_code
         if args.group == "migrate":
             return command_migrate()
         if args.group == "config" and args.command == "status":

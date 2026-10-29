@@ -445,6 +445,19 @@ clipboard. The owner wants a more complete screenshot workflow inspired by
   work, the saved images open, clipboard paste works, and cancellation leaves no
   stray partial file. Record any needed fixes here before the laptop install.
 
+## Priority 1: provide a graphical account login
+
+- [x] **Add a password-authenticated graphical login.** The desktop role
+  installs SDDM and enables its service without configuring automatic login.
+  The existing LUKS unlock remains separate from account login. The selected
+  session is **Hyprland (UWSM-managed)**; Plymouth and boot-splash changes are
+  deferred. See the [desktop guide](desktop.md#graphical-login).
+- [ ] **Accept graphical login in the rehearsal VM.** After the next planned
+  reboot, confirm the SDDM greeter appears, automatic login is off, the
+  UWSM-managed Hyprland session is selectable, and account-password sign-in
+  starts the expected desktop. Keep TTY recovery available and record any
+  greeter or session errors before considering this complete.
+
 ## Priority 1: add a safe, single update entry point
 
 Today, `pacman -Syu`, Git updates, Ansible provisioning, Neovim tools, and manual
@@ -530,9 +543,52 @@ build AUR packages or run unreviewed remote scripts.
   They never run in the package transaction or as root. The registry is empty
   until a concrete user-data migration is reviewed and added. VM acceptance of
   successful, failed, declined, and resumed migration flows remains open.
-- [ ] **Add an update status indicator after the CLI is reliable.** A Waybar
-  module or menu item can show available repo/package updates and launch
-  `hexen update`; clicking it must not start a privileged transaction silently.
+- [x] **Add scheduled Arch package discovery and daily notifications.** Use a
+  persistent, non-root user timer to refresh an isolated package database with
+  [`checkupdates`](https://man.archlinux.org/man/extra/pacman-contrib/checkupdates.8.en).
+  Do not install updates or refresh Pacman's system sync database. When updates
+  are available, send a daily digest with package names, installed and candidate
+  versions, repository, check time, and a link to a full report. Make offline,
+  stale-metadata, and check-failure states explicit instead of reporting “up to
+  date.” The notification action should open the report or a terminal running
+  `hexen update`; it must never start a privileged update silently. The
+  `hexen update-monitor` command and persistent user timer write private reports
+  under `~/.local/state/hexen/updates/`; VM acceptance remains open.
+- [x] **Create the initial Arch package provenance and change inventory.** For
+  installed package changes, retain old/new versions, the Pacman repository and
+  signature transcript, package metadata and `.BUILDINFO` when cached artifacts
+  are available, and a file inventory/diff when both artifacts are available.
+  Link official packages to their Arch package page and packaging Git history.
+  Arch's [build system](https://wiki.archlinux.org/title/Arch_Build_System)
+  stores build recipes separately from upstream source, and package archives can
+  contain `.BUILDINFO` metadata ([package format](https://wiki.archlinux.org/title/Creating_packages)).
+  A valid signature establishes the trusted signer for that artifact, not that
+  the source or build is harmless ([package-signing model](https://wiki.archlinux.org/title/Pacman/Package_signing)).
+- [ ] **Extend provenance coverage beyond Arch packages.** Link AUR packages to
+  the reviewed PKGBUILD revision and source checksum/signature evidence; review
+  Flatpak, vendor packages, AppImages, Walker/Elephant, Neovim plugins, and
+  language tools source by source. Do not imply Pacman covers them. Treat
+  missing provenance or unavailable old artifacts as “not compared,” never as a
+  clean security result.
+- [x] **Record update-monitoring evidence for the work profile.** Keep private
+  timestamps, findings, notifications, and the owner's review/apply/decline
+  decision so scheduled discovery and response can be demonstrated. Confirm
+  with the employer that scheduled detection plus owner-approved installation
+  satisfies its “automatic updates” requirement; do not describe this opt-in
+  flow as unattended installation if the policy requires that. Employer-policy
+  acceptance and VM workflow acceptance remain open.
+- [x] **Implement an interactive, package-by-package update review in source.**
+  `hexen update-monitor review` presents each candidate's installed and
+  candidate version, repository, Arch package page, and recipe history. The
+  owner can record reviewed, wanted, follow-up, or undecided status in the
+  private evidence log; decisions persist as they are made. A final summary
+  offers an explicit handoff to the existing checkpointed `hexen update`
+  workflow or cancellation. A richer TUI can build on the independent review
+  state and evidence functions without adding a dependency to this first
+  terminal interface. **Rehearsal-VM acceptance remains open.** Flags record
+  intent; they never filter the system transaction. Arch requires a full
+  system upgrade after refreshing repository databases, and partial upgrades
+  are unsupported ([ArchWiki guidance](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported)).
 
 ## Priority 2: operational resilience and maintenance
 

@@ -36,16 +36,30 @@ symlinks, and redirected parents are refused. Existing real user-owned parent
 permissions are preserved. Move/back up and reconcile unmanaged configs yourself;
 the provisioner does not overwrite them.
 
-Log into the VM as that user on an active local TTY and run:
+## Graphical login
+
+On boot, first unlock the encrypted system as usual. SDDM then presents a
+graphical account login; enter the desktop account password there. Automatic
+login is not configured. On the first sign-in, choose **Hyprland
+(UWSM-managed)** in SDDM's session selector so the existing Hyprland desktop
+starts with its systemd user-session integration. The SDDM greeter uses its
+stock theme and may itself run on X11; the selected Hyprland session remains
+Wayland. Plymouth is a separate boot-splash feature and is not part of this
+change.
+
+If the greeter or desktop session needs recovery, switch to another TTY with
+Ctrl+Alt+F2, sign in, and run `sudo systemctl disable --now sddm.service` before
+rebooting. That restores the console-login route; from a local TTY, start the
+desktop manually with:
 
 ```sh
 uwsm start hyprland.desktop
 ```
 
-There is no persistent autologin or display-manager configuration. The desktop
-role installs the official Arch `sd` package and the checksum-pinned LocalSend
-AppImage for the desktop user. Run the [editor setup](../config/nvim/README.md)
-as the same user. Do not run Hyprland or Neovim setup as root. The agent's temporary `hexen-desktop-test2` service only
+The desktop role installs the official Arch `sd` package and the checksum-pinned
+LocalSend AppImage for the desktop user. Run the [editor
+setup](../config/nvim/README.md) as the same user. Do not run Hyprland or Neovim
+setup as root. The agent's temporary `hexen-desktop-test2` service only
 provides a test login in the disposable VM; it disappears on reboot.
 
 ## Binding coverage and deliberate differences

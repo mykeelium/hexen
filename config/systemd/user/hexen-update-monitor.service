@@ -1,0 +1,9 @@
+[Unit]
+Description=Check Arch package updates for Hexen review
+Documentation=https://man.archlinux.org/man/extra/pacman-contrib/checkupdates.8.en
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/hexen update-monitor
+TimeoutStartSec=20min
+UMask=0077

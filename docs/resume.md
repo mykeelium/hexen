@@ -1,6 +1,6 @@
 # Current development checkpoint
 
-Updated 2026-10-28. The 2026-10-26 app and recovery notes below describe the
+Updated 2026-10-29. The 2026-10-26 app and recovery notes below describe the
 older `hexen-archinstall` VM; they are historical evidence, not acceptance of
 the clean rehearsal VM. The separate `hexen-rehearsal-20261027` VM now has
 Walker 2.17.2 and all seven matching Elephant 2.22.1 providers built from the
@@ -38,6 +38,44 @@ application gate open. Hyprmon at
 commit `32ad27f94f40fd0dd81f982cc8208bb615607202` passed `go test ./...`, built,
 and opened through the Display settings Ghostty command; its apply/save keys
 have not been exercised.
+
+The daily Arch update-monitor implementation was copied into the rehearsal
+VM's `/home/mcuomo/hexen` checkout on 2026-10-29. Its command and user service
+and timer hashes matched the host source; `pacman-contrib` and `libnotify` are
+installed. The user's `hexen-update-monitor.timer` is enabled and waiting, with
+its next trigger scheduled for 2026-10-30 00:05 EDT. The monitor command has
+not been run manually; use it in a VM terminal to create the first report at
+`~/.local/state/hexen/updates/latest.md`. No package update was started.
+
+SDDM 0.21.0-7 and its five dependencies were installed in the rehearsal VM on
+2026-10-29 from the existing Pacman sync database after reviewing the install
+plan; no pending package updates were included. `sddm.service` is enabled and
+`display-manager.service` points to SDDM. It was not started in the active
+Hyprland session, so the next planned reboot is the first greeter acceptance
+check. No autologin or Plymouth configuration was added. The host Ansible role
+now installs SDDM, refuses to replace another display manager, and enables the
+service for subsequent boots.
+
+The source now has `hexen update-monitor review`, a dependency-free
+package-by-package terminal review that records each choice and an explicit
+cancel/full-update handoff in the private evidence log. The existing full
+update flow still performs its own confirmation and checkpoint. On 2026-10-29,
+the command file was backed up and deployed to the rehearsal VM. Its SHA-256
+matches the host source, VM Python syntax parsing succeeded, and
+`hexen update-monitor review --help` displays the command and `--vm` option.
+The review itself has not been run, so interactive VM acceptance remains open;
+no update transaction was started. The richer TUI is a later presentation
+layer.
+
+The owner reported “Permission denied” when the review handed off to the full
+update. The VM has `/home/mcuomo/recovery` owned by root and mode 0755, with no
+`hexen-updates` child; the updater previously tried to create that child as the
+desktop user before creating a log. The command now falls back to the existing
+private `~/.local/state/hexen/updates/checkpoints` area when the recovery parent
+cannot be written, and this fix was deployed to the VM with a private backup.
+It has not been exercised through an update run. The deployed command remains
+untracked in the VM checkout, so the updater's clean-checkout guard will stop a
+full update before any package transaction until the source is reconciled.
 
 Bitwarden Desktop was added to the apps role from the Bitwarden-verified
 Flathub listing. In the rehearsal VM, Flatpak 1:1.18.4-2 and Bitwarden

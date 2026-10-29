@@ -103,6 +103,51 @@ is only a reboot signal, not a complete service-restart analysis. Run the usual
 service/update review. `hexen update` is the separate interactive transaction
 entry point described below.
 
+`hexen update-monitor` (also installed as a daily systemd **user** timer) checks
+official Arch updates with `checkupdates` in its separate per-user package
+database. It does not refresh Pacman's system database, download packages, or
+install anything. Private timestamped Markdown reports and JSONL check,
+notification, and owner-decision records live under
+`~/.local/state/hexen/updates/`; `latest.md` is the newest report. Open that
+report to review package versions, repository names, Arch package pages, and
+packaging-recipe history, then run `hexen update` in a terminal if you decide
+to apply updates. Notifications never start the update transaction. The user
+timer runs when the user's systemd manager is active; if the machine was off,
+`Persistent=true` catches up when the manager next starts. A failed or offline
+check is reported as unknown, not as current. If desktop notifications are
+unavailable, the report and evidence are still saved.
+
+Run `hexen update-monitor review` in a terminal to refresh discovery and walk
+through each available package. For each one, record it as reviewed, wanted for
+the upcoming update, follow-up, or undecided. The package page and Arch recipe
+history links are shown with installed/candidate versions and repository. Each
+choice is appended immediately to the private evidence log, so quitting or
+interrupting preserves completed decisions. The final summary offers an
+explicit handoff to `hexen update` or cancellation. Handoff is not transaction
+approval: `hexen update` still asks separately before source changes, snapshot
+creation, and the full `pacman -Syu` transaction. Package flags are review
+notes; they cannot restrict the transaction to a subset because Arch does not
+support partial system upgrades. A richer TUI can later use the same review
+state and evidence functions; this first interface uses standard terminal
+prompts and adds no UI dependency. On the nested rehearsal VM, pass
+`--vm` (`hexen update-monitor review --vm`) so optional Ansible convergence
+uses the VM network settings.
+
+After a successful package transaction, the update checkpoint includes a
+package delta and, when old/new archives remain in Pacman's cache, SHA-256,
+`.PKGINFO`, `.BUILDINFO`, file inventories, and a file-list diff. Missing old
+archives or metadata are recorded as “not compared.” The Pacman transcript is
+the record of repository and signature output; review it per package. A valid
+signature establishes signer trust for an artifact, not that its sources or
+build are harmless. Flatpak, AUR/vendor, AppImage, Walker/Elephant, Neovim,
+and language-tool updates remain outside this Arch-package monitor.
+
+The monitor records scheduled discovery and whether the owner approved or
+declined a transaction. It does not install unattended updates. Confirm with
+the employer that this scheduled detection and owner-approved response meets
+its automatic-update policy; this workflow cannot claim compliance when policy
+requires unattended installation.
+
 `hexen update` currently performs the first, checkpointed Arch package-update
 slice. It requires a terminal, a clean repository checkout, the supported
 Btrfs root/Snapper setup, and a mounted FAT ESP at `/boot`. A checkout already
@@ -111,8 +156,10 @@ commits are fetched and offered for review. It refuses an existing Pacman lock
 and requires `/home` to be a separate Btrfs subvolume, as in the documented
 install layout. It checks that `/home` can hold a copy of `/boot` and that
 `/boot` has room at least equal to its current file contents (or 64 MiB). After
-showing free space and the recovery boundary, it creates a private preflight log under
-`~/recovery/hexen-updates/` and requires confirmation before it fetches the
+showing free space and the recovery boundary, it creates a private preflight
+log under `~/recovery/hexen-updates/`, falling back to
+`~/.local/state/hexen/updates/checkpoints/` when the recovery parent is not
+writable by the user. It requires confirmation before it fetches the
 configured Git remote. Incoming commits and their full diff are shown; a
 separate confirmation is required before a clean fast-forward, which immediately
 updates source-linked configs. Diverged branches stop the workflow. The previous

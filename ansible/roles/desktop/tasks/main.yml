@@ -350,6 +350,67 @@
     group: '{{ _desktop_gid }}'
     mode: '0755'
 
+- name: Create the user timer enablement directory
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/.config/systemd/user/timers.target.wants'
+    state: directory
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0755'
+
+- name: Link Hexen update-monitor systemd user units
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/systemd/user/{{ item }}'
+    dest: '{{ _desktop_home }}/.config/systemd/user/{{ item }}'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+  loop: '{{ desktop_update_monitor_unit_names }}'
+
+- name: Enable the daily Hexen update-monitor timer
+  ansible.builtin.file:
+    src: '{{ _desktop_home }}/.config/systemd/user/hexen-update-monitor.timer'
+    dest: '{{ _desktop_home }}/.config/systemd/user/timers.target.wants/hexen-update-monitor.timer'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+
+- name: Check whether the desktop user's systemd bus is available
+  ansible.builtin.stat:
+    path: '/run/user/{{ _desktop_uid }}/bus'
+    follow: false
+  register: _desktop_user_systemd_bus
+
+- name: Reload the desktop user's systemd units when logged in
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.command:
+    argv: [systemctl, --user, daemon-reload]
+  environment:
+    HOME: '{{ _desktop_home }}'
+    XDG_RUNTIME_DIR: '/run/user/{{ _desktop_uid }}'
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/{{ _desktop_uid }}/bus'
+  changed_when: false
+  when: _desktop_user_systemd_bus.stat.exists
+
+- name: Start the daily Hexen update-monitor timer for the active desktop session
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.systemd_service:
+    name: hexen-update-monitor.timer
+    scope: user
+    enabled: true
+    state: started
+  environment:
+    HOME: '{{ _desktop_home }}'
+    XDG_RUNTIME_DIR: '/run/user/{{ _desktop_uid }}'
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/{{ _desktop_uid }}/bus'
+  when: _desktop_user_systemd_bus.stat.exists
+
 - name: Link the repo-owned Elephant user service
   ansible.builtin.file:
     src: '{{ desktop_walker_service_source }}'
@@ -478,3 +539,8 @@
         state: absent
       when: _desktop_validation_runtime.path is defined
       changed_when: false
+
+- name: Enable SDDM for graphical password login on the next boot
+  ansible.builtin.systemd_service:
+    name: sddm.service
+    enabled: true

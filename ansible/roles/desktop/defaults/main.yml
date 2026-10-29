@@ -19,6 +19,9 @@ desktop_launcher_packages:
   walker: []
 desktop_walker_service_name: hexen-elephant.service
 desktop_walker_service_source: '{{ desktop_repo_root }}/config/systemd/user/hexen-elephant.service'
+desktop_update_monitor_unit_names:
+  - hexen-update-monitor.service
+  - hexen-update-monitor.timer
 desktop_walker_packages:
   - walker
   - elephant
@@ -41,6 +44,8 @@ desktop_walker_provider_files:
 desktop_vulkan_driver_packages: []
 
 desktop_packages:
+  - pacman-contrib
+  - sddm
   - hyprland
   - uwsm
   - ghostty
