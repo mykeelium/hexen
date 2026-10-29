@@ -118,7 +118,13 @@ check is reported as unknown, not as current. If desktop notifications are
 unavailable, the report and evidence are still saved.
 
 Run `hexen update-monitor review` in a terminal to refresh discovery and walk
-through each available package. For each one, record it as reviewed, wanted for
+through each available package. Add `--tui` for the keyboard-driven interface;
+on Hyprland, `Super+Shift+U` opens it in a centered floating Ghostty window.
+Use `hexen update-monitor review --tui --preview` to view the interface with
+sample packages; preview choices are not saved and cannot start an update.
+Use the arrow keys to select packages, `r`/`w`/`f`/`s` to record a decision,
+`o` to open the Arch package page, `c` to review the handoff, and `q` to exit.
+For each package, record it as reviewed, wanted for
 the upcoming update, follow-up, or undecided. The package page and Arch recipe
 history links are shown with installed/candidate versions and repository. Each
 choice is appended immediately to the private evidence log, so quitting or
@@ -127,11 +133,10 @@ explicit handoff to `hexen update` or cancellation. Handoff is not transaction
 approval: `hexen update` still asks separately before source changes, snapshot
 creation, and the full `pacman -Syu` transaction. Package flags are review
 notes; they cannot restrict the transaction to a subset because Arch does not
-support partial system upgrades. A richer TUI can later use the same review
-state and evidence functions; this first interface uses standard terminal
-prompts and adds no UI dependency. On the nested rehearsal VM, pass
-`--vm` (`hexen update-monitor review --vm`) so optional Ansible convergence
-uses the VM network settings.
+support partial system upgrades. The TUI uses the same review state and evidence
+functions as the line-oriented interface and adds no dependency. On the nested
+rehearsal VM, pass `--vm` (`hexen update-monitor review --vm`) so optional
+Ansible convergence uses the VM network settings.
 
 After a successful package transaction, the update checkpoint includes a
 package delta and, when old/new archives remain in Pacman's cache, SHA-256,

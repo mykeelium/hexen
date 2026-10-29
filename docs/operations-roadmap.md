@@ -589,6 +589,11 @@ build AUR packages or run unreviewed remote scripts.
   intent; they never filter the system transaction. Arch requires a full
   system upgrade after refreshing repository databases, and partial upgrades
   are unsupported ([ArchWiki guidance](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported)).
+- [x] **Implement the floating update-review TUI in source.** The dependency-free
+  curses interface reuses the review evidence path; `Super+Shift+U` opens it in
+  a centered floating Ghostty window. `hexen update-monitor review --tui
+  --preview` supplies sample packages without querying the system or saving
+  choices. Rehearsal-VM visual and workflow acceptance remains open.
 
 ## Priority 2: operational resilience and maintenance
 

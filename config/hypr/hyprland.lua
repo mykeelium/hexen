@@ -20,6 +20,12 @@ hl.window_rule({
   center = true,
   size = { "monitor_w*0.45", "monitor_h*0.5" },
 })
+hl.window_rule({
+  match = { class = "^hexen-update-review$" },
+  float = true,
+  center = true,
+  size = { "monitor_w*0.68", "monitor_h*0.76" },
+})
 hl.env('XDG_CURRENT_DESKTOP', 'Hyprland')
 hl.env('XDG_SESSION_TYPE', 'wayland')
 hl.on('hyprland.start', function()

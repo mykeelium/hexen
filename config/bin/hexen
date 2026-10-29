@@ -67,18 +67,22 @@ class UpdateReviewState:
     """Presentation-independent package choices and review outcome."""
     discovery: UpdateDiscovery
     decisions: dict[str, str] = field(default_factory=dict)
+    persist: bool = True
 
     def record_choice(self, candidate: UpdateCandidate, decision: str) -> None:
         if candidate not in self.discovery.packages:
             raise ConfigError("package is not part of this update review")
         if decision not in {"reviewed", "wanted", "follow-up", "undecided"}:
             raise ConfigError(f"unsupported package review decision: {decision}")
-        record_update_review_choice(self.discovery, candidate, decision)
+        if self.persist:
+            record_update_review_choice(self.discovery, candidate, decision)
         self.decisions[candidate.name] = decision
 
     def record_outcome(self, decision: str) -> None:
         if decision not in {"interrupted", "cancelled", "handoff-to-full-update"}:
             raise ConfigError(f"unsupported update review outcome: {decision}")
+        if not self.persist:
+            return
         append_update_evidence(private_update_state(), {
             "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "event": "review-summary", "review_id": self.discovery.checked_at,
@@ -867,12 +871,141 @@ def record_update_review_choice(
     })
 
 
-def command_update_review(vm_mode: bool = False) -> int:
+def update_review_tui(
+    stdscr, discovery: UpdateDiscovery, review: UpdateReviewState, preview: bool = False,
+) -> str:
+    """Render a dependency-free package review screen; return its final choice."""
+    import curses
+    import webbrowser
+
+    curses.curs_set(0)
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_CYAN, -1)
+    curses.init_pair(2, curses.COLOR_GREEN, -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(4, curses.COLOR_RED, -1)
+    selected = 0
+    outcome = "interrupted"
+    confirm = False
+    package_page, recipe_history = update_review_links(discovery.packages[0])
+
+    def put(y: int, x: int, value: str, attr: int = curses.A_NORMAL, width: int | None = None) -> None:
+        height, columns = stdscr.getmaxyx()
+        if y < 0 or y >= height or x >= columns:
+            return
+        available = columns - x - 1
+        if width is not None:
+            available = min(available, width)
+        if available > 0:
+            stdscr.addnstr(y, x, value, available, attr)
+
+    while True:
+        stdscr.erase()
+        height, width = stdscr.getmaxyx()
+        if height < 22 or width < 72:
+            put(0, 0, "Resize this window to at least 72 x 22 to review packages.", curses.color_pair(3))
+            put(2, 0, "Choices are saved as you make them. Press q to exit.")
+            key = stdscr.getch()
+            if key in (ord("q"), 27):
+                return "interrupted"
+            continue
+
+        put(0, 2, "HEXEN  /  PACKAGE UPDATE REVIEW", curses.color_pair(1) | curses.A_BOLD)
+        label = "SAMPLE PREVIEW" if preview else f"checked {discovery.checked_at}"
+        put(1, 2, f"{len(discovery.packages)} packages available  ·  {label}")
+        stdscr.hline(2, 2, curses.ACS_HLINE, width - 4)
+        split = min(max(27, width // 3), 39)
+        list_top, list_bottom = 4, height - 4
+        visible = max(1, list_bottom - list_top)
+        first = max(0, min(selected - visible + 1, len(discovery.packages) - visible))
+        for row, candidate_index in enumerate(range(first, min(len(discovery.packages), first + visible))):
+            candidate = discovery.packages[candidate_index]
+            decision = review.decisions.get(candidate.name, "undecided")
+            marker = {"reviewed": "✓", "wanted": "+", "follow-up": "!", "undecided": "·"}[decision]
+            attr = curses.A_REVERSE if candidate_index == selected else curses.A_NORMAL
+            put(list_top + row, 2, f"{marker} {candidate.name}", attr, split - 3)
+        stdscr.vline(3, split, curses.ACS_VLINE, height - 7)
+
+        candidate = discovery.packages[selected]
+        package_page, recipe_history = update_review_links(candidate)
+        detail_x = split + 3
+        detail_width = width - detail_x - 3
+        put(4, detail_x, candidate.name, curses.color_pair(1) | curses.A_BOLD, detail_width)
+        put(6, detail_x, "INSTALLED", curses.A_DIM)
+        put(7, detail_x, candidate.old, width=detail_width)
+        put(9, detail_x, "CANDIDATE", curses.A_DIM)
+        put(10, detail_x, candidate.new, curses.color_pair(2) | curses.A_BOLD, detail_width)
+        put(12, detail_x, f"Repository  {candidate.repo}", width=detail_width)
+        put(14, detail_x, f"Review state  {review.decisions.get(candidate.name, 'undecided')}", width=detail_width)
+        put(16, detail_x, "Arch package page", curses.color_pair(1), detail_width)
+        put(17, detail_x, package_page, curses.A_DIM, detail_width)
+        put(19, detail_x, "Packaging recipe history", curses.color_pair(1), detail_width)
+        put(20, detail_x, recipe_history, curses.A_DIM, detail_width)
+
+        stdscr.hline(height - 3, 2, curses.ACS_HLINE, width - 4)
+        if confirm:
+            confirm_line = "Preview only: no choices are saved and no update can start." if preview else "Choices are review notes; continuing starts a full system upgrade."
+            put(height - 2, 2, confirm_line, curses.color_pair(3), width - 5)
+            action_line = "y  Close preview     Esc  Return to packages" if preview else "y  Continue to confirmed update     n  Cancel     Esc  Return to packages"
+            put(height - 1, 2, action_line, width=width - 5)
+        else:
+            put(height - 2, 2, "↑/↓ select  r reviewed  w want  f follow up  s undecided  o open links  c summary  q quit", width=width - 5)
+            put(height - 1, 2, "Decisions save immediately  ·  Package choices never filter Pacman", curses.A_DIM, width - 5)
+
+        stdscr.refresh()
+        key = stdscr.getch()
+        if confirm:
+            if key in (ord("y"), ord("Y")):
+                outcome = "preview-finished" if preview else "handoff-to-full-update"
+                break
+            if key in (ord("n"), ord("N")):
+                outcome = "cancelled"
+                break
+            if key == 27:
+                confirm = False
+            continue
+        if key in (curses.KEY_UP, ord("k")):
+            selected = max(0, selected - 1)
+        elif key in (curses.KEY_DOWN, ord("j")):
+            selected = min(len(discovery.packages) - 1, selected + 1)
+        elif key in (ord("r"), ord("w"), ord("f"), ord("s")):
+            decision = {"r": "reviewed", "w": "wanted", "f": "follow-up", "s": "undecided"}[chr(key)]
+            review.record_choice(discovery.packages[selected], decision)
+            if selected < len(discovery.packages) - 1:
+                selected += 1
+        elif key == ord("o"):
+            webbrowser.open(package_page)
+        elif key in (ord("c"), curses.KEY_ENTER, 10, 13):
+            confirm = True
+        elif key in (ord("q"), 27):
+            outcome = "interrupted"
+            break
+
+    return outcome
+
+
+def command_update_review(vm_mode: bool = False, tui: bool = False, preview: bool = False) -> int:
     """Review discovered packages interactively before optional full update."""
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ConfigError("hexen update-monitor review requires an interactive terminal")
 
-    discovery = command_update_monitor(notify=False)
+    if preview and not tui:
+        raise ConfigError("--preview requires --tui")
+    discovery = (
+        UpdateDiscovery(
+            checked_at="preview",
+            status="updates-available",
+            detail="Synthetic sample packages; no package query or update is run.",
+            report_path=Path("/dev/null"),
+            packages=(
+                UpdateCandidate("linux", "6.12.5.arch1-1", "6.12.6.arch1-1", "core"),
+                UpdateCandidate("hyprland", "0.52.2-1", "0.52.3-1", "extra"),
+                UpdateCandidate("walker", "2.17.2-1", "2.18.0-1", "extra"),
+            ),
+            exit_code=0,
+        )
+        if preview else command_update_monitor(notify=False)
+    )
     if discovery.status != "updates-available":
         if discovery.status == "up-to-date":
             print("No official Arch package updates are available to review.")
@@ -882,7 +1015,25 @@ def command_update_review(vm_mode: bool = False) -> int:
                 print(f"Details: {discovery.detail}")
         return discovery.exit_code
 
-    review = UpdateReviewState(discovery)
+    review = UpdateReviewState(discovery, persist=not preview)
+    if tui:
+        import curses
+        try:
+            decision = curses.wrapper(update_review_tui, discovery, review, preview)
+        except KeyboardInterrupt:
+            decision = "interrupted"
+        review.record_outcome(decision)
+        if preview:
+            print("Preview closed. No choices were saved and no update was started.")
+            return 0
+        if decision == "interrupted":
+            print("Review stopped. Completed package choices were saved; no update was started.")
+            return 0
+        if decision == "cancelled":
+            print("Update cancelled; no package changes were made.")
+            return 0
+        return command_update(vm_mode)
+
     print("\nPackage-by-package review")
     print("Choices record review intent only; Arch updates must use a full system upgrade.")
     for index, candidate in enumerate(discovery.packages, start=1):
@@ -1910,6 +2061,14 @@ def main() -> int:
         "--vm", action="store_true",
         help="use nested-VM network settings for optional Ansible convergence",
     )
+    update_review.add_argument(
+        "--tui", action="store_true",
+        help="open the keyboard-driven terminal review interface",
+    )
+    update_review.add_argument(
+        "--preview", action="store_true",
+        help="show the TUI with sample packages without querying or changing the system (requires --tui)",
+    )
     groups.add_parser("migrate", help="review and run pending per-user Hexen migrations")
     config = groups.add_parser("config", help="inspect managed configuration")
     config_commands = config.add_subparsers(dest="command", required=True)
@@ -1928,7 +2087,7 @@ def main() -> int:
             return command_update_check() if args.check else command_update(args.vm)
         if args.group == "update-monitor":
             if args.monitor_command == "review":
-                return command_update_review(args.vm)
+                return command_update_review(args.vm, args.tui, args.preview)
             return command_update_monitor().exit_code
         if args.group == "migrate":
             return command_migrate()
