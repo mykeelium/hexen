@@ -21,7 +21,7 @@ hl.window_rule({
   size = { "monitor_w*0.45", "monitor_h*0.5" },
 })
 hl.window_rule({
-  match = { class = "^hexen-update-review$" },
+  match = { class = "^io[.]github[.]hexen[.]updatereview$" },
   float = true,
   center = true,
   size = { "monitor_w*0.68", "monitor_h*0.76" },
