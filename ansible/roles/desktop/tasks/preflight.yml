@@ -423,6 +423,7 @@
     argv: '{{ ["pacman", "-Q"] + desktop_walker_packages }}'
   register: _desktop_walker_packages
   changed_when: false
+  check_mode: false
   failed_when: false
   when: desktop_launcher == 'walker'
 

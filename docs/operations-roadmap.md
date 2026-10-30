@@ -444,6 +444,21 @@ clipboard. The owner wants a more complete screenshot workflow inspired by
 - [ ] **Accept the flow in the rehearsal VM.** Check that all four menu choices
   work, the saved images open, clipboard paste works, and cancellation leaves no
   stray partial file. Record any needed fixes here before the laptop install.
+  The 2026-10-29 VM review found Swappy, `archlinux-contrib`, and `pyalpm`
+  missing. A VM-specific Ansible check-mode preview proposed only those
+  packages, the managed Swappy link, the update-monitor timer link, and
+  ownership corrections; it reported `failed=0`. Applying the reviewed
+  convergence completed with `ok=181 changed=6 failed=0`. Swappy 1.8.0-1,
+  `archlinux-contrib` 20261025-1, and `pyalpm` 0.12.0-1 are installed; the
+  Swappy and Hexen helper links now match the repository. `hexen doctor` reports
+  no missing declared packages. The updated screenshot helper passes `bash -n`.
+  A cancellation-path check with a fake Slurp command returned successfully and
+  created no screenshot directory or partial image in an isolated temporary
+  home. The VM re-locked before interactive capture began, so the four menu
+  choices, real image saves, image opening, clipboard paste, annotated capture,
+  and on-screen cancellation remain unaccepted. The VM checkout is still based
+  on `f72fe91` with the locally deployed doctor and screenshot-helper changes;
+  its private doctor-state directory retains pre-deployment copies for rollback.
 
 ## Priority 1: provide a graphical account login
 
@@ -569,7 +584,28 @@ build AUR packages or run unreviewed remote scripts.
   Flatpak, vendor packages, AppImages, Walker/Elephant, Neovim plugins, and
   language tools source by source. Do not imply Pacman covers them. Treat
   missing provenance or unavailable old artifacts as “not compared,” never as a
-  clean security result.
+  clean security result. The update checkpoint now reports Walker/Elephant's
+  tracked recipe commits and upstream archive checksums alongside installed
+  versions. It explicitly says installed-binary-to-pin correspondence is
+  unverified. For Bitwarden, update checkpoints now also capture the installed
+  Flatpak ref, origin, and commit from local metadata, while stating that
+  remote freshness and signature are not checked. Other non-Arch source types
+  and binary correspondence still need source-specific evidence. The report
+  now compares local Neovim plugin Git HEADs with `lazy-lock.json` pins where
+  the checkout exists, and leaves missing or unsafe checkouts as “not compared.”
+  It does not inspect working-tree contents, signatures, or upstream freshness.
+  Hyprmon now records its documented source commit and SHA-256 of the installed
+  binary when present; this does not establish that the binary was built from
+  that commit. For Mason tools, it records installed receipt source IDs,
+  registry version and checksum, and receipt-file hash. It does not verify
+  executables against receipts or check registry freshness. For Tree-sitter,
+  it hashes local parser binaries listed in the tracked language config; the
+  source revisions remain unpinned, so artifact hashes are identity evidence
+  only and not a trusted-source check. For Zen, 1Password, Zoom, and Slack, it
+  compares installed versions with the tracked reference-build manifest and
+  records each reviewed recipe commit, archive hash, and source-check summary.
+  Those archived hashes identify the reviewed VM builds only; current installed
+  archive correspondence is not verified.
 - [x] **Record update-monitoring evidence for the work profile.** Keep private
   timestamps, findings, notifications, and the owner's review/apply/decline
   decision so scheduled discovery and response can be demonstrated. Confirm
@@ -604,6 +640,23 @@ build AUR packages or run unreviewed remote scripts.
   launcher providers, source-versus-deployed revision drift, snapshot cleanup
   status, firewall policy/zone state, backup freshness, and pending firmware
   work. Support a privacy-reviewed report file; do not upload logs automatically.
+  An initial local-only `hexen doctor [--save]` implementation and usage
+  documentation are now in source, including declared/required package
+  comparisons, tracked manual-app and Walker-provider presence, system and user
+  service state, Snapper cleanup policy, and runtime/permanent firewall views.
+  It also compares the PATH-selected `hexen` command with the current checkout,
+  reporting whether it resolves to the source file, matches its bytes, differs,
+  or cannot be compared.
+  On 2026-10-29 the command ran as the VM user and saved a mode-0600 report in
+  the private doctor report directory. It correctly identified missing
+  `archlinux-contrib` and `swappy` packages and the missing managed Swappy link;
+  NetworkManager, firewalld, SDDM, Snapper cleanup, PipeWire, and WirePlumber
+  were active, with no failed system or user units. Root Snapper listings,
+  `/boot` inventory, and detailed firewalld policy queries were denied to the
+  unprivileged report and were marked unavailable; no privilege prompt was
+  bypassed. Runtime acceptance remains partial. Backup freshness is unknown
+  because no off-device repository is configured, and firmware availability
+  still needs inspection on target hardware.
 - [ ] **Create an off-device backup policy.** Snapshots protect against local
   rollback mistakes, not drive failure, theft, or accidental deletion. Define
   encrypted backup destinations and retention for home files, editor data,
@@ -614,18 +667,37 @@ build AUR packages or run unreviewed remote scripts.
   disposable VM before automating any boot repair.
 - [ ] **Track `.pacnew` and `.pacsave` files.** Report candidates after updates,
   show diffs, and let the owner merge them. Never replace an edited config
-  automatically.
-- [ ] **Decide firmware maintenance.** Document when to inspect LVFS/fwupd and
-  laptop-vendor firmware, keep firmware separate from routine package updates,
-  and require an explicit user action for firmware writes/reboots.
-- [ ] **Add recovery-friendly package records.** Save package manifest, repo
-  revision, profile, update log, boot hashes, and snapshot number together for
-  each successful system update. Keep secrets and private config contents out
-  of the record.
-- [ ] **Set an upstream review cadence.** Recheck source URLs, signatures,
-  checksums, AUR recipes, and out-of-date official package flags before
-  changing their automation. Keep pinned third-party builds manual until the
-  review/update path is reproducible and trusted.
+  automatically. Source now records candidate paths and offers Arch's
+  interactive `pacdiff --sudo` after a successful Hexen package transaction;
+  declines remain resumable and diff content is not added to the private update
+  log. The VM fixture review confirmed `pacdiff` needs a diff editor; Hexen now
+  selects installed Neovim when neither `EDITOR` nor `DIFFPROG` is configured.
+  With editor variables unset, the VM handoff presented both disposable
+  `.pacnew` and `.pacsave` fixtures, skipped them, returned `completed`, and
+  recorded only the review status. The fixture files remained present and
+  unchanged. Documented in the maintenance and machine-profile guides. Viewing
+  the diff and accepting a merge remain untested; end-to-end updater acceptance
+  with disposable fixtures remains open.
+- [x] **Decide firmware maintenance.** The maintenance guide now recommends
+  monthly checks on physical machines and additional checks after relevant
+  vendor advisories or hardware changes. It keeps firmware separate from Arch
+  package updates, requires deliberate owner review before installation or
+  reboot, and covers unsupported devices via official vendor instructions.
+  Virtual-machine checks cannot establish physical device support.
+- [x] **Add recovery-friendly package records.** The private update checkpoint
+  keeps source revisions, selected machine profile, package manifests before
+  and after the transaction, Pacman log, `/boot` archive and hashes, and
+  Snapper snapshot number together. Successful updates add package deltas and
+  available cached-artifact metadata, service/reboot review, and configuration
+  review status. Missing provenance is labeled unavailable; private config
+  contents and secrets are excluded. The maintenance guide documents these
+  records.
+- [x] **Set an upstream review cadence.** `docs/app-sources.md` now calls for a
+  monthly review and another review before changing a source, pin, checksum,
+  signature key, recipe, or automation. It covers official package freshness,
+  third-party recipe and artifact inspection, release notes, and recording
+  unavailable checks. Third-party downloads, recipe execution, and installs
+  remain manual.
 - [ ] **Harden and refine remote desktop later.** After the current SSH-tunneled
   WayVNC workflow is fully accepted, revisit it as a separate quality pass:
   verify the rendered image, lock/unlock behavior, multiple monitors, reconnects

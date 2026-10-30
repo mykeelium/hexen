@@ -11,6 +11,29 @@ inspected, and installed with reviewed one-off commands in a disposable VM; the
 latest clean-VM evidence is below. Hyprmon is built separately from its pinned
 upstream source. No AUR automation is added to Ansible.
 
+## Upstream review cadence
+
+Review this inventory about once a month, and before changing any source URL,
+version pin, checksum, signature key, packaging recipe, or automation. During
+each review:
+
+1. Check the official Arch package pages for tracked out-of-date flags and
+   compare them with the date/version recorded here. A flag is a prompt to
+   investigate, not a reason to install from another source.
+2. For AUR and other third-party packages, compare the tracked recipe or source
+   commit with upstream. Inspect changed `PKGBUILD`, install hooks, URLs,
+   checksums, and signature keys; verify signatures against independently
+   established fingerprints. Review release notes for relevant changes.
+3. For pinned AppImages, binaries, Flatpaks, and editor tools, confirm the
+   upstream project and release, then review the changed artifact permissions,
+   hash/signature, and update procedure before moving the pin.
+4. Update the review date and record findings or unavailable checks here. Keep
+   unsupported checks explicit; an unchanged pin does not prove a safe upstream
+   release.
+
+Third-party builds remain manual. A review does not authorize automatic
+downloads, recipe execution, or package installation.
+
 Matugen and Hyprpaper are signed packages from Arch's official `extra`
 repository: [matugen](https://archlinux.org/packages/extra/x86_64/matugen/) and
 [hyprpaper](https://archlinux.org/packages/extra/x86_64/hyprpaper/). Matugen
@@ -40,14 +63,14 @@ pending rather than installing an AUR helper or adding an unreviewed repository.
 | Software/source | Update owner | Update procedure | Automation status |
 | --- | --- | --- | --- |
 | Signed Arch packages, including desktop tools, Starship, and language runtimes | Pacman and the Hexen package lists | Review the private daily `hexen update-monitor` report or run `hexen update-monitor review` for package-by-package decisions, then use `hexen update` for a full `pacman -Syu`; change package selection in the Ansible lists and apply through the reviewed provisioner. | Daily detection is scheduled; installation remains explicitly confirmed. Package-level flags do not filter Pacman into a partial upgrade. This does not include other rows or satisfy policies requiring unattended installation without employer confirmation. |
-| Bitwarden Desktop | Flatpak from the configured Flathub remote | Run `flatpak update` separately; recheck the app ID, publisher listing, and permissions when changing the source. | Installed by Ansible; updates are separate and have no configured automatic schedule. |
-| Zen, 1Password, Zoom, and Slack | Each vendor source plus its reviewed AUR recipe | Inspect the recipe/source/signature or checksum, build as a normal user, inspect the package archive, then install with Pacman. | Manual only; no AUR helper or unattended recipe refresh. See the per-application review below. |
-| Walker and Elephant | Pinned upstream commits and reviewed packaging recipes | Review the pinned source and recipe changes, rebuild as a normal user, inspect packages, and install manually. | Manual only; not updated by `pacman -Syu`. See [`sources.lock`](../install/manual-apps/walker/sources.lock). |
-| Hyprmon | Pinned upstream source and Go module graph | Review the commit/module changes, build and inspect the binary, then replace the manually installed build. | Manual only; not updated by Pacman. |
+| Bitwarden Desktop | Flatpak from the configured Flathub remote | Run `flatpak update` separately; recheck the app ID, publisher listing, and permissions when changing the source. | Installed by Ansible; updates are separate and have no configured automatic schedule. Update checkpoints capture the installed ref, origin, and commit from local Flatpak metadata; repository signature and remote freshness are not independently checked by that report. |
+| Zen, 1Password, Zoom, and Slack | Each vendor source plus its reviewed AUR recipe | Inspect the recipe/source/signature or checksum, build as a normal user, inspect the package archive, then install with Pacman. | Manual only; no AUR helper or unattended recipe refresh. Update checkpoints compare installed versions with the tracked reference-build records and include recipe commits, artifact hashes, and source-check summaries. The recorded hashes identify the reviewed VM artifacts; they do not prove the currently installed archive is identical. See the per-application review below. |
+| Walker and Elephant | Pinned upstream commits and reviewed packaging recipes | Review the pinned source and recipe changes, rebuild as a normal user, inspect packages, and install manually. | Manual only; not updated by `pacman -Syu`. Update checkpoints report tracked recipe commits and source archive checksums beside installed package versions, but cannot verify that an installed binary came from those exact pins. See [`sources.lock`](../install/manual-apps/walker/sources.lock). |
+| Hyprmon | Pinned upstream source and Go module graph | Review the commit/module changes, build and inspect the binary, then replace the manually installed build. | Manual only; not updated by Pacman. Update checkpoints record the tracked source commit and hash the installed binary when present, but cannot prove that binary was built from that commit. |
 | LocalSend | Official pinned AppImage URL and SHA-256 | Review a release, update version/URL/hash together in the desktop role, then reapply the reviewed role. | Provisioned from a pin; no independent package-manager update. |
-| Neovim plugins | `config/nvim/lazy-lock.json` and the tracked source pins | Review source/commit changes, update the tracked pin, then run `:Lazy restore`; `:Lazy update` alone does not advance the reviewed pin. | User-level and manual; outside Pacman. See the [Neovim update instructions](../config/nvim/README.md#installation-and-updates). |
-| Treesitter parsers | `config/nvim/setup.lua` and the parser registry | Review the parser/registry changes, update the explicit setup list, then rerun the Neovim setup as the desktop user. | User-level and manual; outside Pacman. |
-| Mason tools (Lua LSP, OmniSharp, gopls, basedpyright, Ruff) | Mason plus `config/nvim/setup.lua` and receipt files | Review tool release/platform changes, rerun the explicit setup as the desktop user, and refresh recorded versions. | User-level and manual; the plugin lockfile does not pin tool versions. See the [Neovim update instructions](../config/nvim/README.md#installation-and-updates). |
+| Neovim plugins | `config/nvim/lazy-lock.json` and the tracked source pins | Review source/commit changes, update the tracked pin, then run `:Lazy restore`; `:Lazy update` alone does not advance the reviewed pin. | User-level and manual; outside Pacman. Update checkpoints compare local plugin Git HEADs with tracked pins when checkouts are present. This local comparison does not inspect working-tree contents, signatures, or upstream freshness. See the [Neovim update instructions](../config/nvim/README.md#installation-and-updates). |
+| Treesitter parsers | `config/nvim/setup.lua`, `config/nvim/lua/config/tools.lua`, and the parser registry | Review the parser/registry changes, update the explicit setup list, then rerun the Neovim setup as the desktop user. | User-level and manual; outside Pacman. Update checkpoints hash installed parser binaries for the tracked language list. The upstream source revisions are not pinned, so hashes identify local bytes but do not establish trusted provenance. |
+| Mason tools (Lua LSP, OmniSharp, gopls, basedpyright, Ruff) | Mason plus `config/nvim/setup.lua` and local `mason-receipt.json` files | Review tool release/platform changes, rerun the explicit setup as the desktop user, and refresh the installed receipts. | User-level and manual; update checkpoints record local Mason source IDs, registry version/checksum, and receipt hashes when available. This does not verify the installed executable against its receipt or query upstream freshness. The plugin lockfile does not pin tool versions. See the [Neovim update instructions](../config/nvim/README.md#installation-and-updates). |
 
 ## Requested CLI utilities
 

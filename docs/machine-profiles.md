@@ -49,6 +49,8 @@ overlays remain later roadmap work.
 After desktop provisioning installs the command, use:
 
 ```sh
+hexen doctor
+hexen doctor --save
 hexen config status
 hexen config diff
 hexen config apply
@@ -62,6 +64,19 @@ repository is informational; missing or unexpected managed links produce a
 nonzero exit status. `diff` shows staged and unstaged changes and the contents
 of untracked, non-ignored regular files. It does not modify the repository or
 the home directory.
+
+`hexen doctor` collects a read-only local readiness snapshot: OS and repository
+state, the `hexen` executable selected on `PATH` compared with the current
+checkout, profile and managed-link drift, declared and required package
+presence, tracked manual applications and Walker providers, critical services,
+failed units, storage, Snapper and boot artifacts, network and firewalld state,
+pending user migrations, and firmware tooling. It does not use `sudo`, install
+or update packages, start services, or change system settings. Some checks may
+be unavailable on a VM or before provisioning; the report labels these rather
+than treating them as passes. Backup freshness is not known until an off-device
+backup destination is configured. Physical firmware status remains a hardware
+check. `--save` also writes the displayed Markdown report with mode 0600 under
+`~/.local/state/hexen/doctor/reports/`; it is not uploaded.
 
 `apply` launches the existing interactive `install/provision.sh` path. It
 reports the selected profile, then delegates the impact summary and
@@ -178,7 +193,16 @@ user. It then runs one
 interactive `sudo pacman -Syu` transaction. It records before/after package
 manifests, `.pacnew`/`.pacsave` candidates, failed system units, and a limited
 kernel reboot signal. After a successful transaction and package manifest, it
-offers any reviewed user migrations as a separate, explicitly confirmed step.
+offers an optional interactive `pacdiff --sudo` review when `.pacnew` or
+`.pacsave` candidates exist. The candidate paths and review outcome are kept in
+the private checkpoint; interactive config diffs are not written to the update
+log. Declining leaves the candidates for a later `pacdiff --sudo` run. The
+owner chooses each view, merge, or skip action; Hexen never merges config files
+automatically. After this, Hexen offers any reviewed user migrations as a
+separate, explicitly confirmed step. The handoff respects `DIFFPROG` and
+`EDITOR`; if neither is set and Neovim is installed, it selects Neovim for
+`pacdiff`'s diff view. If no configured diff editor is available, candidates
+remain recorded and the review is reported unavailable.
 They run as the logged-in user, never during Pacman or as root. `hexen migrate`
 can run pending work later. If migrations are complete, Hexen offers a separate
 Ansible configuration review. The provisioner runs syntax validation and

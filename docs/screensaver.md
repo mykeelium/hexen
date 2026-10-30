@@ -1,6 +1,6 @@
 # HEXEN screensaver
 
-Hexen displays a large `HEXEN` wordmark with random TerminalTextEffects (TTE)
+Hexen displays a large `HEX3N` wordmark with random TerminalTextEffects (TTE)
 animations in fullscreen Ghostty windows, one on each active, non-mirrored
 monitor. The backdrop is black, with the text cursor hidden inside the terminal.
 
@@ -36,9 +36,31 @@ hexen-screensaver stop
 Manual previews use the existing idle policy; they do not start the extra
 2½-minute lock deadline used for automatic idle launches.
 
-The artwork is `config/branding/screensaver.txt`. Edit it to change the wordmark.
-`config/ghostty/screensaver.ghostty` controls its font size and black backdrop,
-independently of the normal terminal theme and shaders. The animation runs at
+The artwork is `config/branding/screensaver.txt`. It contains a full-block-cell
+raster of the HEX3N wordmark, so TTE can animate each filled terminal cell and
+build the glyph shapes piece by piece. Invisible Braille blank characters keep
+empty cells aligned. The raster is sampled from the actual custom H, E, 3, and
+N outlines; X is composed from the JetBrainsMono Nerd Font fallback.
+`config/ghostty/screensaver.ghostty` controls the smaller terminal
+font needed to fit the 64-column art and its black backdrop, independently of
+the normal terminal theme and shaders.
+
+After editing the SVG paths, rebuild the custom font and then regenerate the
+full-block artwork:
+
+```sh
+python tools/build_hexen_glyph_font.py
+python tools/render_hexen_screensaver.py
+```
+
+FontTools (`python-fonttools` on Arch) and Pillow (`python-pillow`) are needed
+for regeneration only. The generated artwork is checked in, so the installed
+screensaver has no Pillow dependency. All four custom glyphs share a common
+outline box and side bearing, and N/3 are generated as exact horizontal
+reflections of H/E. The same font shapes the lock-screen wordmark. Path
+outlines become filled glyphs in the current text color; SVG fill and stroke
+styling is not embedded as font color. Ansible installs the generated font for
+the desktop user and refreshes that user's font cache. The screensaver runs at
 60 frames per second. TTE selects a random effect each time one completes.
 
 TTE 0.15.0 is downloaded from its official PyPI release as a checksum-pinned wheel

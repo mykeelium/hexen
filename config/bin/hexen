@@ -140,29 +140,99 @@ def source_status_lines(package_manifest: str | None) -> list[str]:
         lines.append("  AUR/vendor/Walker packages: " + (", ".join(present_manual) if present_manual else "none of the tracked candidates detected"))
         lines.append("    Installed versions are inventory only; recipe/vendor freshness remains a separate review.")
 
+    walker_lock = REPO_ROOT / "install/manual-apps/walker/sources.lock"
+    try:
+        if walker_lock.is_symlink() or not walker_lock.is_file():
+            raise OSError("tracked source lock is missing or unsafe")
+        lock_data = json.loads(walker_lock.read_text(encoding="utf-8"))
+        if not isinstance(lock_data, dict):
+            raise ValueError("source lock must contain an object")
+        sources = lock_data.get("upstream_sources")
+        recipes = lock_data.get("recipes")
+        if not isinstance(sources, dict) or not isinstance(recipes, list):
+            raise ValueError("source lock is missing upstream_sources or recipes")
+        lines.append(f"  Walker/Elephant tracked source lock: reviewed {lock_data.get('reviewed_on', 'date unavailable')}")
+        for name, source in sorted(sources.items()):
+            if not isinstance(source, dict):
+                lines.append(f"    {name}: invalid tracked source record")
+                continue
+            lines.append(
+                f"    upstream {name}: version {source.get('version', 'unknown')}; "
+                f"SHA-256 {source.get('sha256', 'not recorded')}"
+            )
+        installed = {}
+        if package_manifest is not None:
+            for row in package_manifest.splitlines():
+                columns = row.split(None, 1)
+                if len(columns) == 2:
+                    installed[columns[0]] = columns[1]
+        for recipe in recipes:
+            if not isinstance(recipe, dict):
+                lines.append("    invalid recipe record in tracked source lock")
+                continue
+            package = str(recipe.get("package", "unknown"))
+            version = installed.get(package, "not installed or inventory unavailable")
+            lines.append(
+                f"    recipe {package}: pinned commit {recipe.get('commit', 'not recorded')}; "
+                f"installed {version}; installed recipe correspondence not verified"
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        lines.append(f"  Walker/Elephant tracked source provenance unavailable ({error})")
+
     flatpak = shutil.which("flatpak")
     if not flatpak:
         lines.append("  Bitwarden Flatpak: flatpak command unavailable")
     else:
         try:
-            result = subprocess.run(
-                [flatpak, "info", "--system", "--show-version", "com.bitwarden.desktop"],
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                lines.append(f"  Bitwarden Flatpak: installed version {result.stdout.strip()}; Flathub freshness not queried")
+            details = {}
+            for field in ("ref", "origin", "commit"):
+                result = subprocess.run(
+                    [flatpak, "info", "--system", f"--show-{field}", "com.bitwarden.desktop"],
+                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    details[field] = result.stdout.strip()
+            if details:
+                lines.append(
+                    "  Bitwarden Flatpak: installed ref "
+                    f"{details.get('ref', 'unavailable')}; "
+                    f"origin {details.get('origin', 'unavailable')}; "
+                    f"commit {details.get('commit', 'unavailable')}"
+                )
+                lines.append("    Local installation metadata only; repository signature and Flathub freshness not independently checked.")
             else:
                 lines.append("  Bitwarden Flatpak: system installation not found or unavailable")
         except OSError as error:
             lines.append(f"  Bitwarden Flatpak: check unavailable ({error})")
 
     hyprmon = Path.home() / ".local/bin/hyprmon"
+    hyprmon_source = REPO_ROOT / "install/manual-apps/hyprmon/README.md"
+    hyprmon_pin = "unavailable"
+    try:
+        if hyprmon_source.is_symlink() or not hyprmon_source.is_file():
+            raise OSError("tracked build guide is missing or unsafe")
+        source_text = hyprmon_source.read_text(encoding="utf-8")
+        pin_match = re.search(r"\bcommit `([0-9a-f]{40})`", source_text)
+        if pin_match:
+            hyprmon_pin = pin_match.group(1)
+    except (OSError, UnicodeError) as error:
+        lines.append(f"  Hyprmon source pin unavailable ({error})")
     if hyprmon.is_symlink():
-        lines.append("  Hyprmon: installed path is a symlink; source revision not checked")
+        lines.append("  Hyprmon: installed path is a symlink; binary not hashed")
     elif hyprmon.is_file():
-        lines.append("  Hyprmon: local binary present; pinned build revision not checked")
+        try:
+            digest = hashlib.sha256()
+            with hyprmon.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            lines.append(
+                f"  Hyprmon: installed binary SHA-256 {digest.hexdigest()}; "
+                f"tracked source commit {hyprmon_pin}; binary/source correspondence not verified"
+            )
+        except OSError as error:
+            lines.append(f"  Hyprmon: installed binary could not be hashed ({error})")
     else:
-        lines.append("  Hyprmon: local binary not found")
+        lines.append(f"  Hyprmon: local binary not found; tracked source commit {hyprmon_pin}")
 
     lockfile = REPO_ROOT / "config/nvim/lazy-lock.json"
     try:
@@ -171,9 +241,13 @@ def source_status_lines(package_manifest: str | None) -> list[str]:
         pins = json.loads(lockfile.read_text(encoding="utf-8"))
         if not isinstance(pins, dict):
             raise ValueError("lockfile must contain an object")
-        lines.append(f"  Neovim plugins: {len(pins)} tracked pins; deployed plugin revisions are not compared")
+        lines.append(f"  Neovim plugins: {len(pins)} tracked pins")
+        lines.extend(neovim_plugin_provenance_lines(pins))
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
         lines.append(f"  Neovim plugins: tracked pin inventory unavailable ({error})")
+    lines.extend(mason_provenance_lines())
+    lines.extend(treesitter_parser_provenance_lines())
+    lines.extend(aur_reference_provenance_lines(package_manifest))
     return lines
 
 
@@ -206,6 +280,68 @@ def offer_service_restart_review(log: Path) -> tuple[str, bool]:
     update_log(log, f"Interactive service restart review {status}; transcript: {transcript}")
     print(f"Service restart review: {status}; transcript: {transcript}")
     return status, result.returncode != 0
+
+
+def offer_pacdiff_review(candidates: str, log: Path) -> str:
+    """Offer Arch's interactive pacnew/pacsave review without storing diffs."""
+    paths = [line for line in candidates.splitlines() if line]
+    if not paths:
+        update_log(log, "Configuration-file review: no .pacnew/.pacsave candidates found.")
+        print("No .pacnew or .pacsave candidates found.")
+        return "no-candidates"
+
+    print("Configuration files needing review:")
+    for path in paths:
+        print(f"  {path}")
+    pacdiff = shutil.which("pacdiff")
+    if not pacdiff:
+        update_log(log, "Configuration-file review unavailable: pacdiff is not installed.")
+        print("pacdiff is not installed; candidates remain listed in the checkpoint.")
+        return "unavailable"
+
+    pacdiff_env = os.environ.copy()
+    if not pacdiff_env.get("DIFFPROG") and not pacdiff_env.get("EDITOR") and shutil.which("nvim"):
+        pacdiff_env["EDITOR"] = "nvim"
+    try:
+        diff_program = (
+            shlex.split(pacdiff_env["DIFFPROG"])[0]
+            if pacdiff_env.get("DIFFPROG")
+            else "nvim" if pacdiff_env.get("EDITOR") == "nvim" else "vim"
+        )
+    except (ValueError, IndexError):
+        diff_program = ""
+    if not diff_program or not shutil.which(diff_program):
+        update_log(log, "Configuration-file review unavailable: pacdiff's configured diff editor is not installed.")
+        print("pacdiff needs an installed diff editor. Install Vim, or set EDITOR=nvim or DIFFPROG.")
+        return "unavailable"
+
+    print("Arch pacdiff can show diffs and lets you review, merge, or skip each candidate.")
+    try:
+        answer = input("Open the interactive pacdiff review now? [y/N] ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in {"y", "yes"}:
+        update_log(log, "Configuration-file review declined; candidates remain for later review.")
+        print("Review declined; candidates remain listed in the checkpoint.")
+        return "declined"
+
+    # Keep the interactive diff session on the terminal, but do not persist
+    # config contents in the update transcript. pacdiff uses sudo/sudoedit
+    # only for an explicit merge or removal selected by the owner.
+    try:
+        result = subprocess.run(
+            ["script", "--quiet", "--flush", "--return", "--command",
+             shlex.join([pacdiff, "--sudo"]), "/dev/null"],
+            check=False, env=pacdiff_env,
+        )
+    except OSError as error:
+        update_log(log, f"Configuration-file review could not start: {error}")
+        print(f"pacdiff could not start: {error}")
+        return "could-not-start"
+    status = "completed" if result.returncode == 0 else f"failed-{result.returncode}"
+    update_log(log, f"Configuration-file review {status}; interactive output was not retained.")
+    print(f"pacdiff review: {status}; interactive diff output was not saved.")
+    return status
 
 
 def repo_git(*args: str) -> subprocess.CompletedProcess[str]:
@@ -442,6 +578,296 @@ def command_update_check() -> int:
         failures += 1
     print("Note: this check does not fetch Git data, refresh package databases, contact application upstreams, or modify files.")
     return 1 if failures else 0
+
+
+def deployed_hexen_command_status() -> str:
+    """Compare the PATH-selected command with the current checkout without running it."""
+    source = REPO_ROOT / "config/bin/hexen"
+    deployed_name = shutil.which("hexen")
+    revision = repo_git("rev-parse", "--short", "HEAD")
+    revision_text = revision.stdout.strip() if revision.returncode == 0 else "unavailable"
+    dirty = repo_git("status", "--porcelain=v1", "--untracked-files=normal")
+    source_state = "dirty" if dirty.returncode == 0 and dirty.stdout else "clean" if dirty.returncode == 0 else "state unavailable"
+    if not deployed_name:
+        return f"not found on PATH (source {revision_text}, {source_state})"
+    try:
+        target = Path(deployed_name).resolve(strict=True)
+        if not target.is_file() or source.is_symlink() or not source.is_file():
+            return "deployed path or tracked source is not a regular file; comparison unavailable"
+        if target == source.resolve(strict=True):
+            return f"points to current checkout ({revision_text}, {source_state})"
+
+        def digest(path: Path) -> str:
+            value = hashlib.sha256()
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    value.update(chunk)
+            return value.hexdigest()
+
+        if digest(target) == digest(source):
+            return f"deployed file bytes match current source ({revision_text}, {source_state})"
+        return f"deployed file differs from current source ({revision_text}, {source_state})"
+    except OSError as error:
+        return f"comparison unavailable ({error})"
+
+
+def doctor_output(argv: list[str], *, timeout: int = 8) -> str:
+    """Run a bounded, read-only local diagnostic and return a concise result."""
+    executable = shutil.which(argv[0])
+    if not executable:
+        return f"unavailable ({argv[0]} not installed)"
+    try:
+        result = subprocess.run(
+            [executable, *argv[1:]], text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False, timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"unavailable ({error})"
+    output = result.stdout.strip()
+    if argv[0] == "systemctl" and "is-active" in argv[1:] and output:
+        return output.replace("\n", ", ")
+    if result.returncode:
+        detail = result.stderr.strip() or output or f"exit {result.returncode}"
+        return f"unavailable ({detail})"
+    return output or "ok (no output)"
+
+
+def private_doctor_report_path() -> Path:
+    """Return a new private path for an optional local doctor report."""
+    state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+    if not state_home.is_absolute():
+        raise ConfigError("XDG_STATE_HOME must be an absolute, non-symlink path")
+    cursor = Path(state_home.anchor)
+    for part in state_home.parts[1:]:
+        cursor = cursor / part
+        if cursor.is_symlink():
+            raise ConfigError(f"refusing symlinked doctor state path component: {cursor}")
+    state_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    state_info = state_home.stat()
+    if state_info.st_uid != os.getuid() or state_info.st_mode & 0o022:
+        raise ConfigError(f"XDG_STATE_HOME must be user-owned and not group/world-writable: {state_home}")
+    namespace = state_home / "hexen"
+    reports = namespace / "doctor/reports"
+    for directory in (namespace, namespace / "doctor", reports):
+        if directory.is_symlink():
+            raise ConfigError(f"refusing symlinked doctor report directory: {directory}")
+        directory.mkdir(mode=0o700, exist_ok=True)
+        info = directory.stat()
+        too_open = info.st_mode & (0o077 if directory == reports else 0o022)
+        if not directory.is_dir() or info.st_uid != os.getuid() or too_open:
+            raise ConfigError(f"doctor report directory must be private and user-owned: {directory}")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = reports / f"{stamp}.md"
+    if path.exists() or path.is_symlink():
+        raise ConfigError(f"doctor report already exists: {path}")
+    return path
+
+
+def declared_package_inventory() -> tuple[set[str], list[str]]:
+    """Resolve the repository's simple package-list variables for this machine."""
+    try:
+        import yaml
+    except ImportError:
+        raise ConfigError("PyYAML unavailable; declared package comparison cannot be read") from None
+
+    def mapping(path: Path) -> dict:
+        if path.is_symlink() or not path.is_file():
+            raise ConfigError(f"package declaration file is missing or unsafe: {path}")
+        try:
+            value = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, yaml.YAMLError) as error:
+            raise ConfigError(f"cannot read package declarations from {path}: {error}") from error
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ConfigError(f"package declaration file must contain a mapping: {path}")
+        return value
+
+    def add_list(target: set[str], value: object, label: str) -> None:
+        if value is None:
+            return
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            raise ConfigError(f"{label} must be a list of package names")
+        target.update(item for item in value if item)
+
+    package_vars = mapping(REPO_ROOT / "ansible/group_vars/all/packages.yml")
+    apps_vars = mapping(REPO_ROOT / "ansible/roles/apps/defaults/main.yml")
+    desktop_vars = mapping(REPO_ROOT / "ansible/roles/desktop/defaults/main.yml")
+    profile = local_setting(PROFILE_RE, "common")
+    if profile not in PROFILES:
+        raise ConfigError(f"unknown machine profile in local.yml: {profile!r}")
+    profile_vars = mapping(REPO_ROOT / f"ansible/profiles/{profile}.yml")
+    local_path = REPO_ROOT / "ansible/group_vars/all/local.yml"
+    local_vars = mapping(local_path) if local_path.exists() or local_path.is_symlink() else {}
+
+    packages: set[str] = set()
+    add_list(packages, local_vars.get("base_packages", package_vars.get("base_packages")), "base_packages")
+    add_list(packages, local_vars.get("apps_packages", apps_vars.get("apps_packages")), "apps_packages")
+    add_list(packages, local_vars.get("desktop_packages", desktop_vars.get("desktop_packages")), "desktop_packages")
+    add_list(packages, local_vars.get("desktop_vulkan_driver_packages", desktop_vars.get("desktop_vulkan_driver_packages")), "desktop_vulkan_driver_packages")
+
+    launcher = local_vars.get("desktop_launcher", "walker")
+    launcher_file = Path.home() / ".config/hexen/launcher"
+    if launcher_file.is_file() and not launcher_file.is_symlink():
+        choices = launcher_file.read_text(encoding="utf-8").splitlines()
+        if choices:
+            launcher = choices[0].strip()
+    if not isinstance(launcher, str) or launcher not in {"walker", "fuzzel"}:
+        raise ConfigError(f"unknown launcher choice: {launcher!r}")
+    launcher_packages = local_vars.get("desktop_launcher_packages", desktop_vars.get("desktop_launcher_packages", {}))
+    if not isinstance(launcher_packages, dict):
+        raise ConfigError("desktop_launcher_packages must be a mapping")
+    add_list(packages, launcher_packages.get(launcher), f"desktop_launcher_packages.{launcher}")
+    if launcher == "walker":
+        # The role verifies these manually built providers before deploying Walker config.
+        add_list(packages, local_vars.get("desktop_walker_packages", desktop_vars.get("desktop_walker_packages")), "desktop_walker_packages")
+
+    remote_value = local_vars.get("desktop_remote_access_enabled", False)
+    remote_enabled = remote_value is True or (isinstance(remote_value, str) and remote_value.lower() == "true")
+    if remote_enabled:
+        add_list(packages, local_vars.get("desktop_remote_access_packages", desktop_vars.get("desktop_remote_access_packages")), "desktop_remote_access_packages")
+
+    for category in ("base", "apps", "desktop"):
+        add_list(packages, profile_vars.get(category), f"profile.{category}")
+    local_overrides = local_vars.get("hexen_profile_local_overrides", {})
+    if not isinstance(local_overrides, dict):
+        raise ConfigError("hexen_profile_local_overrides must be a mapping")
+    for category in ("base", "apps", "desktop"):
+        add_list(packages, local_overrides.get(category), f"local.{category}")
+    return packages, [f"profile {profile}", f"launcher {launcher}"]
+
+
+def command_doctor(save: bool = False) -> int:
+    """Show local, read-only workstation readiness and maintenance signals."""
+    lines = ["# Hexen doctor", "", f"Checked: {datetime.now().astimezone().isoformat(timespec='seconds')}", ""]
+
+    pretty_name = "unknown"
+    try:
+        if Path("/etc/os-release").is_file():
+            for row in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+                if row.startswith("PRETTY_NAME="):
+                    pretty_name = row.partition("=")[2].strip().strip('"')
+                    break
+    except (OSError, UnicodeError):
+        pretty_name = "unavailable"
+    lines.extend(["## System", f"- OS: {pretty_name}", f"- Kernel: {os.uname().release}", ""])
+
+    lines.extend(["## Repository and profile"])
+    revision = repo_git("rev-parse", "--short", "HEAD")
+    dirty = repo_git("status", "--short", "--untracked-files=normal")
+    if revision.returncode or dirty.returncode:
+        detail = revision.stderr.strip() or dirty.stderr.strip() or "Git query failed"
+        lines.append(f"- Repository: unavailable ({detail})")
+    else:
+        lines.append(f"- Repository: {revision.stdout.strip()} ({'dirty' if dirty.stdout else 'clean'})")
+        if dirty.stdout:
+            lines.append("- Working-tree entries:")
+            lines.extend(f"  - `{item}`" for item in dirty.stdout.splitlines())
+    lines.append(f"- Deployed `hexen` command: {deployed_hexen_command_status()}")
+    try:
+        lines.append(f"- Profile: {local_setting(PROFILE_RE, 'common')}")
+    except (ConfigError, OSError, UnicodeError) as error:
+        lines.append(f"- Profile: unavailable ({error})")
+
+    lines.extend(["", "## Managed desktop links"])
+    try:
+        missing = []
+        for destination, source in sorted(expected_links(Path.home()).items()):
+            if not destination.is_symlink() or destination.resolve(strict=False) != source.resolve(strict=False):
+                missing.append(destination.relative_to(Path.home()).as_posix())
+        lines.append("- Status: all expected links match" if not missing else "- Reconciliation needed:")
+        lines.extend(f"  - `{item}`" for item in missing)
+    except (ConfigError, OSError, UnicodeError) as error:
+        lines.append(f"- Status: unavailable ({error})")
+
+    lines.extend(["", "## Packages and applications"])
+    pacman = shutil.which("pacman")
+    installed_manifest = None
+    if pacman:
+        try:
+            result = subprocess.run([pacman, "-Q"], text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, check=False, timeout=15)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            lines.append(f"- Pacman inventory: unavailable ({error})")
+        else:
+            if result.returncode == 0:
+                installed_manifest = result.stdout
+                lines.append(f"- Pacman inventory: {len(result.stdout.splitlines())} installed packages")
+            else:
+                lines.append(f"- Pacman inventory: unavailable ({result.stderr.strip() or 'query failed'})")
+    else:
+        lines.append("- Pacman inventory: unavailable (pacman not installed)")
+    if installed_manifest is not None:
+        installed_names = {row.split(None, 1)[0] for row in installed_manifest.splitlines() if row.split(None, 1)}
+        manual_missing = sorted(set(LOCAL_MANUAL_PACKAGES) - installed_names)
+        try:
+            declared, context = declared_package_inventory()
+            missing = sorted(declared - installed_names)
+            lines.append(f"- Declared/required package set ({', '.join(context)}): {len(declared)} package(s)")
+            if missing:
+                lines.append("- Missing declared or required packages:")
+                lines.extend(f"  - `{name}`" for name in missing)
+            else:
+                lines.append("- Missing declared or required packages: none")
+            lines.append("- Untracked installed packages are not treated as errors; profile removal is not automated.")
+        except (ConfigError, OSError, UnicodeError) as error:
+            lines.append(f"- Declared package comparison: unavailable ({error})")
+        if manual_missing:
+            lines.append("- Missing tracked manual applications/Walker providers:")
+            lines.extend(f"  - `{name}`" for name in manual_missing)
+        else:
+            lines.append("- Tracked manual applications/Walker providers: all detected")
+    lines.extend(f"- {item.removeprefix('  ')}" for item in source_status_lines(installed_manifest))
+
+    lines.extend(["", "## Services and failures"])
+    for unit in ("NetworkManager", "firewalld", "display-manager", "snapper-cleanup.timer"):
+        lines.append(f"- `{unit}`: {doctor_output(['systemctl', 'is-active', unit])}")
+    lines.append(f"- Failed system units: {doctor_output(['systemctl', '--failed', '--no-legend'])}")
+    lines.append(f"- User audio services: {doctor_output(['systemctl', '--user', 'is-active', 'pipewire.service', 'wireplumber.service'])}")
+    lines.append(f"- Failed user units: {doctor_output(['systemctl', '--user', '--failed', '--no-legend'])}")
+
+    lines.extend(["", "## Storage and snapshots"])
+    lines.append(f"- Filesystem usage: {doctor_output(['df', '-h', '/', '/home', '/boot'])}")
+    lines.append(f"- Root mount: {doctor_output(['findmnt', '-no', 'SOURCE,FSTYPE,OPTIONS', '/'])}")
+    lines.append(f"- Root snapshots: {doctor_output(['snapper', '-c', 'root', 'list', '--columns', 'number,date,description'])}")
+    lines.append(f"- Root snapshot cleanup policy: {doctor_output(['snapper', '-c', 'root', 'get-config'])}")
+    boot_contents = doctor_output(["find", "/boot", "-maxdepth", "2", "-type", "f", "-printf", "%P\\n"], timeout=8)
+    lines.append(f"- Boot contents: {boot_contents}")
+
+    lines.extend(["", "## Network and firewall"])
+    lines.append(f"- Default route: {doctor_output(['ip', 'route', 'show', 'default'])}")
+    lines.append(f"- Firewalld default zone: {doctor_output(['firewall-cmd', '--get-default-zone'])}")
+    lines.append(f"- Firewalld active zones: {doctor_output(['firewall-cmd', '--get-active-zones'])}")
+    lines.append(f"- Runtime drop-zone policy: {doctor_output(['firewall-cmd', '--zone=drop', '--list-all'])}")
+    lines.append(f"- Permanent drop-zone policy: {doctor_output(['firewall-cmd', '--permanent', '--zone=drop', '--list-all'])}")
+
+    lines.extend(["", "## Migrations, backups, and firmware"])
+    try:
+        migrations = load_migrations()
+        state_home = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state")))
+        if not state_home.is_absolute():
+            raise ConfigError("XDG_STATE_HOME must be an absolute path")
+        migration_state = state_home / "hexen/migrations"
+        for directory in (state_home, state_home / "hexen", migration_state):
+            if directory.is_symlink():
+                raise ConfigError(f"refusing symlinked migration state path: {directory}")
+        pending = pending_migrations(migration_state, migrations)
+        lines.append(f"- Pending user migrations: {len(pending)}" + (" — " + ", ".join(item["id"] for item in pending) if pending else ""))
+    except (ConfigError, OSError, UnicodeError) as error:
+        lines.append(f"- Pending user migrations: unavailable ({error})")
+    lines.append("- Backup freshness: not configured or not checked by this report")
+    lines.append(f"- Firmware tooling: {doctor_output(['pacman', '-Q', 'fwupd'])}")
+    lines.append("- Physical firmware status: pending target-hardware inspection")
+    lines.extend(["", "This report is read-only. It does not install packages, start services, refresh databases, contact upstreams, or change system settings."])
+
+    report = "\n".join(lines) + "\n"
+    print(report, end="")
+    if save:
+        path = private_doctor_report_path()
+        path.write_text(report, encoding="utf-8")
+        path.chmod(0o600)
+        print(f"Saved private report: {path}")
+    return 0
 
 
 def update_log(path: Path, message: str) -> None:
@@ -1099,6 +1525,227 @@ def command_update_review(vm_mode: bool = False, tui: bool = False, preview: boo
     return command_update(vm_mode)
 
 
+def neovim_plugin_provenance_lines(pins: dict[str, object]) -> list[str]:
+    """Compare tracked plugin pins with local Git checkouts without running code."""
+    data_home = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
+    plugin_root = data_home / "nvim/lazy"
+    if not data_home.is_absolute():
+        return ["  Neovim plugin checkout comparison unavailable (XDG_DATA_HOME is not absolute)"]
+    if plugin_root.is_symlink():
+        return ["  Neovim plugin checkout comparison unavailable (plugin directory is a symlink)"]
+    if not plugin_root.is_dir():
+        return ["  Neovim plugin checkout comparison unavailable (plugin directory not found)"]
+    git = shutil.which("git")
+    if not git:
+        return ["  Neovim plugin checkout comparison unavailable (git not installed)"]
+
+    lines = ["  Neovim plugin checkout comparison (local Git metadata only):"]
+    for name, pin in sorted(pins.items()):
+        if not name or Path(name).name != name or name in {".", ".."}:
+            lines.append(f"    {name!r}: unsafe plugin directory name; not compared")
+            continue
+        if not isinstance(pin, dict) or not isinstance(pin.get("commit"), str):
+            lines.append(f"    {name}: invalid tracked pin; not compared")
+            continue
+        expected = pin["commit"]
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", expected):
+            lines.append(f"    {name}: invalid tracked commit pin; not compared")
+            continue
+        checkout = plugin_root / name
+        git_metadata = checkout / ".git"
+        if checkout.is_symlink() or git_metadata.is_symlink():
+            lines.append(f"    {name}: symlinked checkout metadata; not compared")
+            continue
+        if not checkout.is_dir() or not git_metadata.exists():
+            lines.append(f"    {name}: checkout missing; not compared")
+            continue
+        try:
+            git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+            result = subprocess.run(
+                [git, "-C", str(checkout), "rev-parse", "--verify", "HEAD"],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                check=False, timeout=5, env=git_env,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            lines.append(f"    {name}: checkout revision unavailable ({error}); not compared")
+            continue
+        actual = result.stdout.strip().lower()
+        if result.returncode or not re.fullmatch(r"[0-9a-f]{40}", actual):
+            lines.append(f"    {name}: checkout revision unavailable; not compared")
+            continue
+        status = "matches" if actual == expected.lower() else "DIFFERS from"
+        lines.append(f"    {name}: local HEAD {actual} {status} tracked pin {expected}")
+    lines.append("    This does not check upstream freshness, signatures, or plugin working-tree contents.")
+    return lines
+
+
+def mason_provenance_lines() -> list[str]:
+    """Report local Mason receipt identities without claiming artifact verification."""
+    data_home = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
+    package_root = data_home / "nvim/mason/packages"
+    if not data_home.is_absolute():
+        return ["  Mason receipt inventory unavailable (XDG_DATA_HOME is not absolute)"]
+    if package_root.is_symlink():
+        return ["  Mason receipt inventory unavailable (package directory is a symlink)"]
+    if not package_root.is_dir():
+        return ["  Mason receipt inventory unavailable (package directory not found)"]
+    try:
+        packages = sorted(package_root.iterdir(), key=lambda path: path.name)
+    except OSError as error:
+        return [f"  Mason receipt inventory unavailable ({error})"]
+
+    lines = ["  Mason local receipts (registry metadata; artifact signatures not verified):"]
+    if not packages:
+        lines.append("    no installed package directories found")
+        return lines
+    for package_dir in packages:
+        if package_dir.is_symlink() or not package_dir.is_dir():
+            lines.append(f"    {package_dir.name}: unsafe or non-directory entry; not compared")
+            continue
+        receipt = package_dir / "mason-receipt.json"
+        if receipt.is_symlink() or not receipt.is_file():
+            lines.append(f"    {package_dir.name}: receipt missing; not compared")
+            continue
+        try:
+            if receipt.stat().st_size > 4 * 1024 * 1024:
+                raise ValueError("receipt exceeds 4 MiB limit")
+            raw = receipt.read_bytes()
+            data = json.loads(raw.decode("utf-8"))
+            if not isinstance(data, dict):
+                raise ValueError("receipt must contain an object")
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+            lines.append(f"    {package_dir.name}: receipt unavailable ({error}); not compared")
+            continue
+        source = data.get("source") if isinstance(data.get("source"), dict) else {}
+        raw_source = source.get("raw") if isinstance(source.get("raw"), dict) else {}
+        registry = data.get("registry") if isinstance(data.get("registry"), dict) else {}
+        checksums = registry.get("checksums") if isinstance(registry.get("checksums"), dict) else {}
+        source_id = source.get("id") or raw_source.get("id") or "unavailable"
+        registry_name = registry.get("name", "unavailable")
+        registry_version = registry.get("version", "unavailable")
+        registry_checksum = checksums.get("registry.json", "unavailable")
+        receipt_digest = hashlib.sha256(raw).hexdigest()
+        if data.get("name") != package_dir.name:
+            lines.append(f"    {package_dir.name}: receipt package name mismatch; not compared")
+            continue
+        lines.append(
+            f"    {package_dir.name}: source {json.dumps(str(source_id))}; "
+            f"registry {json.dumps(str(registry_name))} {json.dumps(str(registry_version))}; "
+            f"registry.json SHA-256 {json.dumps(str(registry_checksum))}; "
+            f"receipt SHA-256 {receipt_digest}"
+        )
+    lines.append("    Receipt data is local inventory, not proof that installed binaries match it or that upstream is current.")
+    return lines
+
+
+def treesitter_parser_provenance_lines() -> list[str]:
+    """Hash configured local Tree-sitter parser binaries without executing them."""
+    config_file = REPO_ROOT / "config/nvim/lua/config/tools.lua"
+    try:
+        if config_file.is_symlink() or not config_file.is_file():
+            raise OSError("tracked language-tool config is missing or unsafe")
+        config_text = config_file.read_text(encoding="utf-8")
+        match = re.search(r"\bparsers\s*=\s*\{([^}]*)\}", config_text, re.DOTALL)
+        if not match:
+            raise ValueError("tracked parser list is missing")
+        parser_text = match.group(1)
+        parsers = re.findall(r"['\"]([A-Za-z0-9_+-]+)['\"]", parser_text)
+        residue = re.sub(r"['\"][A-Za-z0-9_+-]+['\"]|[\s,]", "", parser_text)
+        if residue or not parsers or len(parsers) != len(set(parsers)):
+            raise ValueError("tracked parser list has unsupported or duplicate entries")
+    except (OSError, UnicodeError, ValueError) as error:
+        return [f"  Tree-sitter parser inventory unavailable ({error})"]
+
+    data_home = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
+    parser_root = data_home / "nvim/site/parser"
+    if not data_home.is_absolute():
+        return ["  Tree-sitter parser inventory unavailable (XDG_DATA_HOME is not absolute)"]
+    if parser_root.is_symlink():
+        return ["  Tree-sitter parser inventory unavailable (parser directory is a symlink)"]
+    if not parser_root.is_dir():
+        return ["  Tree-sitter parser inventory unavailable (parser directory not found)"]
+
+    lines = ["  Tree-sitter parsers (tracked list and local artifact hashes; source revisions not pinned):"]
+    for name in parsers:
+        parser = parser_root / f"{name}.so"
+        if parser.is_symlink():
+            lines.append(f"    {name}: parser artifact is a symlink; not compared")
+            continue
+        if not parser.is_file():
+            lines.append(f"    {name}: parser artifact missing; not compared")
+            continue
+        try:
+            digest = hashlib.sha256()
+            with parser.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            lines.append(f"    {name}: SHA-256 {digest.hexdigest()}; upstream source revision not recorded")
+        except OSError as error:
+            lines.append(f"    {name}: parser artifact could not be hashed ({error}); not compared")
+    lines.append("    A matching hash on a later report shows byte equality only, not trusted provenance.")
+    return lines
+
+
+def aur_reference_provenance_lines(package_manifest: str | None) -> list[str]:
+    """Report reviewed AUR build evidence without equating it to installed artifacts."""
+    manifest = REPO_ROOT / "install/manual-apps/validation-2026-10-26.json"
+    try:
+        if manifest.is_symlink() or not manifest.is_file():
+            raise OSError("tracked AUR validation record is missing or unsafe")
+        if manifest.stat().st_size > 4 * 1024 * 1024:
+            raise ValueError("validation record exceeds 4 MiB limit")
+        raw = manifest.read_bytes()
+        data = json.loads(raw.decode("utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("packages"), list):
+            raise ValueError("validation record has an invalid package list")
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+        return [f"  AUR reference build inventory unavailable ({error})"]
+
+    installed = {}
+    if package_manifest is not None:
+        for row in package_manifest.splitlines():
+            columns = row.split(None, 1)
+            if len(columns) == 2:
+                installed[columns[0]] = columns[1]
+    lines = [
+        f"  AUR/vendor reference builds: reviewed {data.get('date', 'date unavailable')}; "
+        f"record SHA-256 {hashlib.sha256(raw).hexdigest()}"
+    ]
+    suffix = "-x86_64.pkg.tar.zst"
+    for item in data["packages"]:
+        if not isinstance(item, dict):
+            lines.append("    invalid package record; not compared")
+            continue
+        name = item.get("package")
+        artifact = item.get("artifact")
+        recipe = item.get("recipe_commit")
+        artifact_hash = item.get("sha256")
+        if not isinstance(name, str) or not isinstance(artifact, str):
+            lines.append("    package or artifact name unavailable; not compared")
+            continue
+        if not isinstance(recipe, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", recipe):
+            lines.append(f"    {json.dumps(name)}: invalid recipe commit; not compared")
+            continue
+        if not isinstance(artifact_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", artifact_hash):
+            lines.append(f"    {json.dumps(name)}: invalid artifact hash; not compared")
+            continue
+        prefix = f"{name}-"
+        version = artifact[len(prefix):-len(suffix)] if artifact.startswith(prefix) and artifact.endswith(suffix) else "unavailable"
+        installed_version = installed.get(name, "not installed or inventory unavailable")
+        version_status = (
+            "matches reference version" if installed_version == version
+            else "differs from reference version" if version != "unavailable" and name in installed
+            else "version not compared"
+        )
+        lines.append(
+            f"    {json.dumps(name)}: installed {installed_version} ({version_status}); "
+            f"reference build {version}; recipe commit {recipe}; "
+            f"archive SHA-256 {artifact_hash}; source checks {json.dumps(str(item.get('source_verification', 'unavailable')))}"
+        )
+    lines.append("    Reference hashes identify recorded VM artifacts; installed archive correspondence is not verified.")
+    return lines
+
+
 def package_manifest_inventory(before: str, after: str, directory: Path) -> list[dict[str, str]]:
     """Write package deltas and cache metadata without claiming unavailable comparisons."""
     def parse_manifest(value: str) -> dict[str, str]:
@@ -1511,6 +2158,10 @@ def command_update(vm_mode: bool = False) -> int:
         (checkpoint / "source-revisions.txt").write_text(
             f"before {source_before}\nafter  {source_after}\n", encoding="ascii"
         )
+        checkpoint_profile = local_setting(PROFILE_RE, "common")
+        if checkpoint_profile not in PROFILES:
+            raise ConfigError(f"unknown machine profile in local.yml: {checkpoint_profile!r}")
+        (checkpoint / "machine-profile.txt").write_text(checkpoint_profile + "\n", encoding="ascii")
         ensure_no_pacman_lock()
         packages_before = update_capture(["pacman", "-Q"], log).stdout
         (checkpoint / "packages-before.txt").write_text(packages_before, encoding="utf-8")
@@ -1638,6 +2289,9 @@ def command_update(vm_mode: bool = False) -> int:
         print(f"System package update completed. Log and recovery checkpoint: {checkpoint}")
         if pacnew.stdout.strip():
             print("Review .pacnew/.pacsave candidates listed in pacnew-pacsave.txt.")
+        (checkpoint / "pacdiff-review-status.txt").write_text("pending\n", encoding="utf-8")
+        pacdiff_status = offer_pacdiff_review(pacnew.stdout, log)
+        (checkpoint / "pacdiff-review-status.txt").write_text(pacdiff_status + "\n", encoding="utf-8")
         if failed_units.stdout.strip():
             print("Failed system units were recorded in failed-units.txt; review them before relying on the system.")
         print(f"Reboot check: {reboot_signal}")
@@ -2044,6 +2698,9 @@ def command_restore(backup_id: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="hexen", description="Hexen workstation tools")
     groups = parser.add_subparsers(dest="group", required=True)
+    doctor = groups.add_parser("doctor", help="show read-only workstation readiness diagnostics")
+    doctor.add_argument("--save", action="store_true",
+                        help="save a private Markdown copy under ~/.local/state/hexen/doctor/reports")
     update = groups.add_parser("update", help="inspect status or run a confirmed system package update")
     update.add_argument("--check", action="store_true",
                         help="show available updates without changing anything")
@@ -2083,6 +2740,8 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.group == "doctor":
+            return command_doctor(args.save)
         if args.group == "update":
             return command_update_check() if args.check else command_update(args.vm)
         if args.group == "update-monitor":

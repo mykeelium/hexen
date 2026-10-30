@@ -142,6 +142,7 @@
     argv: [virsh, -c, qemu:///system, pool-info, default]
   register: _desktop_libvirt_default_pool
   changed_when: false
+  check_mode: false
   failed_when: _desktop_libvirt_default_pool.rc not in [0, 1]
 
 - name: Define the default libvirt directory pool when missing
@@ -163,12 +164,14 @@
     argv: [virsh, -c, qemu:///system, pool-info, default]
   register: _desktop_libvirt_default_pool_state
   changed_when: false
+  check_mode: false
 
 - name: Read the default libvirt storage pool definition
   ansible.builtin.command:
     argv: [virsh, -c, qemu:///system, pool-dumpxml, default]
   register: _desktop_libvirt_default_pool_definition
   changed_when: false
+  check_mode: false
 
 - name: Require the default pool to use the configured directory
   ansible.builtin.assert:
@@ -285,6 +288,8 @@
         *) export PATH="$HOME/.local/bin:$PATH" ;;
       esac
       export XDG_STATE_HOME={{ desktop_xdg_state_home | quote }}
+      export EDITOR=nvim
+      export VISUAL=nvim
       if command -v zoxide >/dev/null 2>&1; then
         eval "$(zoxide init bash)"
       fi

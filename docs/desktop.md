@@ -212,6 +212,9 @@ The selected Tokyo Night pack supplies Ghostty's initial palette. The Bash setup
 sets `cat` to `bat --paging=never` for interactive use.
 The desktop role adds a marked block to the target user's `.bashrc`; it does not
 replace the rest of that file.
+That block sets both `EDITOR` and `VISUAL` to `nvim`, so terminal tools that
+consult either variable use Neovim by default. A later user-defined export in
+`.bashrc` can still override the managed defaults.
 It also adds a marked block to `.gitconfig` to use delta for Git diffs. This
 preserves existing Git settings outside the managed block. Podman and
 `podman-compose` provide rootless containers through the selected desktop
@@ -382,8 +385,9 @@ adopt the repository version. Font glyphs use the already installed Nerd Font.
 ## Lock screen
 
 Press **Super+Ctrl+L** (or choose Lock in the system menu) to lock the session.
-Hyprlock shows the HEXEN wordmark, clock, account name and an explicit locked
+Hyprlock shows the HEX3N wordmark, clock, account name and an explicit locked
 status. The password field remains visible before typing. Enter your password
 and press Enter to unlock; an unsuccessful attempt displays an unlock-failure
-message. Colors follow the active Hexen theme. This is a visual update only:
-PAM authentication and the idle/suspend locking policy remain unchanged.
+message. The wordmark uses the custom HEX3N glyph font. Colors follow the active
+Hexen theme. This is a visual update only: PAM authentication and the
+idle/suspend locking policy remain unchanged.

@@ -52,7 +52,7 @@ capture_screenshot() {
   destination=$(screenshot_path)
   temp_dir=$(mktemp -d "${destination%/*}/.hexen-screenshot.XXXXXX") || return 1
   temp_image="$temp_dir/capture.png"
-  trap 'rm -rf -- "$temp_dir"; trap - RETURN' RETURN
+  trap -- "rm -rf -- $(printf '%q' "$temp_dir")" EXIT
 
   if [[ $mode == annotate ]]; then
     command -v swappy >/dev/null || missing Swappy

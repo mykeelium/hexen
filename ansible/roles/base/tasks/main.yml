@@ -1,4 +1,5 @@
 ---
+# Check-mode previews must still run read-only probes used by safety assertions.
 - name: Install base packages from official repositories
   ansible.builtin.package:
     name: "{{ (base_packages + (hexen_profile_packages.base | default([]))) | unique }}"
@@ -15,6 +16,7 @@
     - ufw.service
   register: base_firewall_competing_active
   changed_when: false
+  check_mode: false
   failed_when: false
 
 - name: Inspect competing firewall service enablement
@@ -28,6 +30,7 @@
     - ufw.service
   register: base_firewall_competing_enabled
   changed_when: false
+  check_mode: false
   failed_when: false
 
 - name: Refuse to start firewalld alongside another firewall manager
@@ -64,6 +67,7 @@
       - --get-default-zone
   register: base_firewall_permanent_zone
   changed_when: false
+  check_mode: false
 
 - name: Set a fail-closed persistent firewalld default zone
   ansible.builtin.command:
@@ -87,6 +91,7 @@
       - --get-default-zone
   register: base_firewall_runtime_zone
   changed_when: false
+  check_mode: false
 
 - name: Set the active firewalld default zone
   ansible.builtin.command:
@@ -118,6 +123,7 @@
       - /
   register: root_filesystem
   changed_when: false
+  check_mode: false
 
 - name: Require Btrfs root
   ansible.builtin.assert:
@@ -136,6 +142,7 @@
       - /
   register: root_subvolume
   changed_when: false
+  check_mode: false
 
 - name: Read Btrfs subvolume path for home
   ansible.builtin.command:
@@ -148,6 +155,7 @@
       - /home
   register: home_subvolume
   changed_when: false
+  check_mode: false
 
 - name: Read filesystem type for home
   ansible.builtin.command:
@@ -160,6 +168,7 @@
       - /home
   register: home_filesystem
   changed_when: false
+  check_mode: false
 
 - name: Require a separate Btrfs home subvolume
   ansible.builtin.assert:
@@ -180,6 +189,7 @@
       - /.snapshots
   register: snapshots_mount
   changed_when: false
+  check_mode: false
   failed_when: snapshots_mount.rc not in [0, 1]
 
 - name: Require Snapper-compatible snapshots mount layout

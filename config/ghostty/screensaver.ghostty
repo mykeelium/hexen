@@ -1,4 +1,5 @@
 # Isolated from normal terminal themes, shaders and keybindings.
+font-family = "Hexen Glyphs"
 font-family = "JetBrainsMono Nerd Font"
 font-size = 18
 background = 000000

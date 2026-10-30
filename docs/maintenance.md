@@ -33,6 +33,15 @@ performs the ordinary cleanup and keeps the newest three versions by default.
 A recovery checkpoint's package list and `/boot` archive are separate from the
 cache.
 
+`hexen update` keeps recovery and package records together in a private
+checkpoint: source revisions, the selected machine profile, installed package
+lists before and after the transaction, the Pacman log, `/boot` hashes and
+archive, and the Snapper snapshot number. Successful updates also include the
+package-change and available artifact metadata, service and reboot review, and
+configuration-file review status. Missing cached package artifacts or
+provenance are identified as unavailable, not guessed. The record excludes
+private configuration contents and secrets.
+
 ## Firewall baseline
 
 Firewalld is the only workstation firewall manager in the base role. The role
@@ -146,18 +155,45 @@ provisioning rather than running competing managers.
 
 ## Backups and hardware maintenance
 
+After `hexen update`, configuration files ending in `.pacnew` or `.pacsave`
+are listed in that update's private recovery checkpoint. When candidates exist,
+Hexen can open Arch's interactive review with `pacdiff --sudo`; choose to view
+diffs, merge, or skip each item in that tool. A declined review can be resumed
+later by running `pacdiff --sudo` in a terminal. Hexen records candidate paths
+and review status but does not store the interactive diff output or merge files
+on its own. See the [Arch `pacdiff` manual](https://man.archlinux.org/man/pacdiff.8)
+for its options and behavior.
+
 `restic` is installed as a tool only. It creates no repository or schedule
 until an off-device destination, encryption secret, exclusions, and recovery
 method have been selected. Keep secrets out of Git and make them independently
 recoverable. Test restoring files and a quiesced VM image to a separate path
 before relying on a backup.
 
-`fwupd` and `smartmontools` are installed for explicit maintenance checks.
-Inspect firmware support with `fwupdmgr get-devices` and available updates with
-`fwupdmgr get-updates`; installing firmware and rebooting remain deliberate
-owner actions. Inspect drive support and health with `sudo smartctl --scan-open`
-and the device-specific `sudo smartctl -a /dev/DEVICE` command. Virtual disks
-cannot establish physical firmware or SMART compatibility.
+`fwupd` and `smartmontools` are installed for explicit maintenance checks. On
+physical machines, inspect firmware support and available updates about once a
+month, and again after a relevant vendor security advisory or major hardware
+change. Start with:
+
+```sh
+fwupdmgr get-devices
+fwupdmgr get-updates
+```
+
+Review each offered update's device, version, release notes, and power/reboot
+requirements before deciding. Firmware checks are separate from routine Arch
+package updates. Do not schedule firmware installation or reboot automatically;
+install only when deliberately approved, on reliable power, and when the device
+can tolerate the required reboot. Record the device, version, date, and result
+in the machine's maintenance notes. If fwupd does not support a device, consult
+the laptop vendor's official firmware page and follow its documented recovery
+instructions; do not substitute an unverified image. A VM can verify the
+commands and documentation only, not physical firmware availability or
+compatibility.
+
+Inspect drive support and health with `sudo smartctl --scan-open` and the
+device-specific `sudo smartctl -a /dev/DEVICE` command. Virtual disks cannot
+establish physical firmware or SMART compatibility.
 
 `power-profiles-daemon` starts at boot. Available profiles depend on firmware
 and hardware; inspect with `powerprofilesctl list` and select with

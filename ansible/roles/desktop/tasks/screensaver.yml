@@ -5,6 +5,9 @@
     follow: false
   loop:
     - .local/share
+    - .local/share/fonts
+    - .local/share/fonts/hexen
+    - .local/share/fonts/hexen/HexenGlyphs-Regular.ttf
     - .local/share/hexen
     - .local/share/hexen/screensaver
     - .local/share/hexen/screensaver/terminaltexteffects-0.15.0-py3-none-any.whl
@@ -17,8 +20,8 @@
         (not item.stat.exists and not (item.stat.islnk | default(false))) or
         (not (item.stat.islnk | default(false)) and
          item.stat.uid == _desktop_uid | int and
-         ((item.stat.isreg | default(false)) if item.item.endswith('.whl') else (item.stat.isdir | default(false))))
-    fail_msg: 'Screensaver path must have the expected type and desktop-user ownership: {{ item.item }}'
+         ((item.stat.isreg | default(false)) if (item.item.endswith('.whl') or item.item.endswith('.ttf')) else (item.stat.isdir | default(false))))
+    fail_msg: 'Managed font or screensaver path must have the expected type and desktop-user ownership: {{ item.item }}'
   loop: '{{ _desktop_screensaver_paths.results }}'
   loop_control:
     label: '{{ item.item }}'
@@ -30,6 +33,35 @@
     path: '{{ _desktop_home }}/.local/share/hexen/screensaver'
     state: directory
     mode: '0755'
+
+- name: Create the HEXEN glyph font directory
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.file:
+    path: '{{ _desktop_home }}/.local/share/fonts/hexen'
+    state: directory
+    mode: '0755'
+
+- name: Install the HEXEN glyph font
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.copy:
+    src: '{{ desktop_repo_root }}/config/fonts/HexenGlyphs-Regular.ttf'
+    dest: '{{ _desktop_home }}/.local/share/fonts/hexen/HexenGlyphs-Regular.ttf'
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0644'
+  register: _desktop_hexen_glyph_font
+
+- name: Refresh the desktop user's font cache
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.command:
+    argv: [fc-cache, --force, '{{ _desktop_home }}/.local/share/fonts/hexen']
+  environment:
+    HOME: '{{ _desktop_home }}'
+  changed_when: false
+  when: _desktop_hexen_glyph_font.changed and not ansible_check_mode
 
 - name: Download the checksum-pinned upstream TTE wheel
   become: true
