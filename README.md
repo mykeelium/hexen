@@ -1,9 +1,18 @@
 # Hexen
 
-A personal Arch Linux workstation setup: Archinstall for the base installation,
-Ansible for post-install provisioning, and repository-owned Hyprland and Neovim
-configuration. The target is repeatable configuration on a rolling-release
-system, not identical package versions on every install.
+Welcome to Hexen! 
+
+This is yet another prericed Arch setup. At the point we are 
+with LLMs and documentation, code is cheap. I think there is going to be a 
+stedy trend of each of us having our own, curated functionality that we can 
+steer, so here is mine! I hope you enjoy.
+
+I have personally like how streamlined the process can be, and the ability to 
+make and use little tools to help make your PC more robust. But at the same time,
+you do not have to trade off aesthetics to be able to get functionality.
+
+Hexen is launching in open beta (might be more like alpha) to hit spooooky day!
+It has been an ongoing process and more functionality and cleanup is in store!
 
 ## Try the developer preview
 
@@ -43,21 +52,6 @@ Archinstall owns the boot files; Ansible validates that setup before applying
 base configuration. Current kernel/Limine reinstall hooks and reboot passed;
 an actual newer-kernel upgrade remains untested. See the
 [recovery evidence](docs/recovery.md) and [application source inventory](docs/app-sources.md).
-
-## Boundaries
-
-- Use a disposable virtual disk for installation development.
-- Keep disk selection, credentials, and destructive install confirmation interactive.
-- Keep private keys, passwords, installer credential exports, and VM images out
-  of the repository.
-- Review package sources and enabled services explicitly.
-- Validate boot, updates, provisioning repeatability, and recovery before using
-  the setup on the work laptop.
-
-The [design](docs/superpowers/specs/2026-10-21-personal-arch-system-design.md)
-and [implementation plan](docs/superpowers/plans/2026-10-21-personal-arch-system.md)
-describe the larger project. Neovim should use the owner's configuration;
-LazyVim is not a required dependency.
 
 ## License
 
