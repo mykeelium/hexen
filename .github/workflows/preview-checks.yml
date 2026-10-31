@@ -1,0 +1,25 @@
+name: Installer preview checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  onboarding:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check onboarding behavior without OS mutations
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -m unittest discover -s tests -p test_archinstall_generator.py
+          python3 -m unittest discover -s tests -p test_first_boot.py
+          python3 -m unittest discover -s tests -p test_walker_setup.py
+          python3 -m unittest discover -s tests -p test_browser_fallback.py
+          python3 -m unittest discover -s tests -p test_desktop_helper.py
+          bash -n install/first-boot.sh install/provision.sh install/archinstall/hexen-install.sh config/bin/hexen-desktop
+          git diff --check

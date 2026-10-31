@@ -118,7 +118,7 @@ EOF
       exit 1
     fi
   done
-  for provider in desktopapplications files runner calc providerlist; do
+  for provider in desktopapplications files runner calc websearch providerlist; do
     if [[ ! -f "/usr/lib/elephant/${provider}.so" ]]; then
       printf 'Walker provider is missing: /usr/lib/elephant/%s.so\n' "$provider" >&2
       printf 'Follow install/manual-apps/walker/README.md and rerun provisioning.\n' >&2

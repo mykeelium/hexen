@@ -49,18 +49,20 @@ The EFI System Partition is necessarily unencrypted in this setup and contains o
 
 Before adding desktop configuration, confirm that the VM boots through Limine, requests the LUKS passphrase, and mounts the encrypted Btrfs root. Then use the repository's Ansible playbook. Do not attempt the laptop install until the documented VM acceptance steps in [`../docs/superpowers/specs/2026-10-21-personal-arch-system-design.md`](../docs/superpowers/specs/2026-10-21-personal-arch-system-design.md) have been completed and the laptop's hardware has been checked.
 
-After first boot, clone this repository to its long-term location and run
-[`provision.sh`](provision.sh) as the regular desktop account. It audits boot
+After first boot, follow the [public quickstart](../docs/quickstart.md): clone
+this repository to its long-term location and run [`first-boot.sh`](first-boot.sh)
+(add `--vm` in a VM) as the regular desktop account. This prepares Walker and
+then runs [`provision.sh`](provision.sh). It audits boot
 and applies the repeatable Ansible roles after showing an interactive summary.
 The four manually reviewed third-party applications still follow their separate
 procedure in [`manual-apps/README.md`](manual-apps/README.md).
 
-The provisioner then asks which launcher to configure. Fuzzel is the default
-and is installed from Arch's signed repositories. Walker is optional: first
-follow [`manual-apps/walker/README.md`](manual-apps/walker/README.md) to review,
-build, inspect, and explicitly install the pinned Walker/Elephant packages as
-your regular user, then choose Walker. Provisioning checks that prerequisite;
-it does not build or install AUR recipes. Both choices route Super+Space,
+The provisioner then asks which launcher to configure. Walker is the default.
+Before selecting it, follow [`manual-apps/walker/README.md`](manual-apps/walker/README.md)
+to review, build, inspect, and explicitly install the pinned Walker/Elephant
+packages as your regular user. Provisioning checks that prerequisite; it does
+not build or install AUR recipes. Fuzzel is the optional alternative and comes
+from Arch's signed repositories. Both choices route Super+Space,
 Super+Escape, the Hexen menu, and the clipboard picker through the selected
 launcher. Re-running provisioning lets you choose again; an older backend's
 config link can remain on disk but is not used by the selected dispatcher.
@@ -77,8 +79,9 @@ For a rehearsal guest using libvirt's default NAT uplink, run
 nested libvirt networks unmanaged to avoid the uplink subnet collision, selects
 the `vulkan-virtio` driver required by Zed for the virtual GPU, and still
 configures virtualization sockets and storage. The physical workstation must
-select a Vulkan driver that matches its actual GPU. Choose Fuzzel unless the
-separately reviewed Walker packages are already installed. Bluetooth remains
+select a Vulkan driver that matches its actual GPU. Choose Walker after
+installing its separately reviewed packages, or choose Fuzzel if you prefer
+the official-repository launcher. Bluetooth remains
 enabled for future hardware, but its service is started only when its kernel
 hardware directory exists. Keep the same mode and launcher on repeat runs.
 

@@ -9,3 +9,6 @@
 
 # Python test bytecode.
 /tests/__pycache__/
+
+# Local Python bytecode, including installer checks.
+**/__pycache__/

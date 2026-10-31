@@ -1,6 +1,9 @@
 ---
 # Non-repository applications stay manual; see docs/app-sources.md.
 apps_packages:
+  # Working browser before the separately reviewed Zen installation.
+  - firefox
+  - noto-fonts
   - neovim
   - lazygit
   - obsidian

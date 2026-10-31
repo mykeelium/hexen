@@ -6,6 +6,49 @@ For exact menu paths, nested prompts, and the saved rehearsal-VM choices, follow
 the [Archinstall walkthrough and machine choices](choices.md). It covers every
 top-level menu in Archinstall 4.5, the final review, and first-boot provisioning.
 
+## Experimental generated configuration
+
+The new generator prepares the documented single-disk configuration and shows
+it before launching Archinstall. It currently targets **Archinstall 4.5 only**,
+on the official x86_64 Arch ISO booted in UEFI mode. Installation acceptance
+with this generator is still pending; use a new disposable VM disk for rehearsal.
+Existing partitions, partition tables, filesystems, mounted devices, read-only
+devices, and disks smaller than 40 GiB are refused.
+
+From the live ISO, connect to the internet, download this repository archive (the live ISO need not have Git), and run:
+
+```sh
+curl -fL --retry 3 -o /tmp/hexen-source.tar.gz https://github.com/mykeelium/hexen/archive/refs/heads/main.tar.gz
+bsdtar -xf /tmp/hexen-source.tar.gz
+cd hexen-main
+./install/archinstall/hexen-install.sh
+```
+
+This previews the plan without partitioning. It asks for a disk, hostname,
+username, timezone, keyboard layout, locale, and mirror country code. Review the
+plain-language summary; add `--json` to inspect the generated JSON. To launch the experimental install on a disposable disk, rerun:
+
+```sh
+./install/archinstall/hexen-install.sh --install
+```
+
+The install path requires typing `ERASE` followed by the selected device path.
+Passwords are entered with hidden prompts during the in-memory handoff; a
+credentials file is not generated. Archinstall then opens its normal review
+menu. Check **Disk configuration → Disk encryption**, **Authentication**, the
+bootloader, and the entire final summary before selecting **Install**. Leave
+**Save credentials** alone: explicitly saving credentials in Archinstall can
+persist the disk passphrase. The adapter rechecks disk identity and LUKS
+configuration immediately before Archinstall performs disk operations.
+
+The temporary non-secret config is removed on exit. Archinstall can retain its
+own non-secret configuration and logs. An aborted menu is not reported as a
+successful installation. No reboot or post-install provisioning is automatic.
+Follow the boot checks below, then run `./install/first-boot.sh --vm` as the new
+regular account in the VM. It installs prerequisites, guides Walker setup, and
+runs provisioning. The generated base config
+installs Git and Ansible; it does not configure SSH or remote access.
+
 ## Run the guided installer
 
 1. Boot the official Arch installation ISO in UEFI mode.

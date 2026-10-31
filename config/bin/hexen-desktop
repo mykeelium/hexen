@@ -120,9 +120,11 @@ case "${1:-}" in
       exec walker --gapplication-service
     fi ;;
   browser|browser-private)
-    command -v zen-browser >/dev/null || missing 'Zen Browser'
-    if [[ $1 == browser-private ]]; then exec zen-browser --private-window; fi
-    exec zen-browser ;;
+    if command -v zen-browser >/dev/null; then browser=zen-browser
+    elif command -v firefox >/dev/null; then browser=firefox
+    else missing 'Zen Browser or Firefox'; fi
+    if [[ $1 == browser-private ]]; then exec "$browser" --private-window; fi
+    exec "$browser" ;;
   passwords)
     command -v 1password >/dev/null || missing '1Password'
     exec 1password ;;

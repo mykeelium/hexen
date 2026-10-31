@@ -17,8 +17,9 @@ this file is git-ignored. Keep shared changes in the tracked files.
 ## Provision and start
 
 For a fresh setup, clone this repository into the target user's writable home
-directory and run [`install/provision.sh`](../install/provision.sh) from any
-terminal. It shows an interactive summary, installs the declared Ansible
+directory and run [`install/first-boot.sh`](../install/first-boot.sh) (add `--vm`
+in a VM) to prepare Walker before provisioning. For an already prepared system,
+run [`install/provision.sh`](../install/provision.sh) from an interactive terminal. It shows an interactive summary, installs the declared Ansible
 collection, and runs the full workstation playbook for the logged-in account.
 Keep the clone at the same path because the configuration links point into it.
 For manual control, the equivalent commands from the repository root are:
@@ -93,14 +94,14 @@ provides a test login in the disposable VM; it disappears on reboot.
 | Media and brightness keys | PipeWire volume, playerctl playback, brightnessctl |
 
 There are 121 registered shortcuts in the tested VM. Core window/workspace/group
-keys follow Omarchy. Helper-backed actions use small repository-owned commands
+keys follow Omarchy. Browser shortcuts prefer Zen and use Firefox when Zen is not installed. Helper-backed actions use small repository-owned commands
 rather than installing Omarchy's framework:
 
-- Fuzzel is the default launcher from official Arch repositories. Walker is an
-  install-time option using manually built, pinned Walker/Elephant recipes and
-  selected providers; see [the build procedure](../install/manual-apps/walker/).
-  Provisioning asks for the choice and checks that Walker's packages already
-  exist. It never builds AUR recipes. `hexen-desktop` routes Super+Space,
+- Walker is the default launcher, using manually built, pinned
+  Walker/Elephant recipes and selected providers; see [the build
+  procedure](../install/manual-apps/walker/). Provisioning checks that Walker's
+  packages already exist and never builds AUR recipes. Fuzzel is the optional
+  alternative from official Arch repositories. `hexen-desktop` routes Super+Space,
   Super+Escape, the Hexen menu, Waybar pickers, and clipboard selection through
   that choice. Walker starts Elephant as a user service and exposes app search,
   files, command running, calculations, and provider navigation. Package search,

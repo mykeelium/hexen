@@ -342,13 +342,13 @@ uncommitted/unpushed host changes are not included in a GitHub clone. Record the
 actual commit with acceptance evidence. Follow the provisioner's prompts and
 enter sudo authorization yourself.
 
-At **Desktop launcher [walker/fuzzel]**, choose **fuzzel** for the initial
-signed-package provisioning rehearsal. The default **walker** requires separately
-reviewed manual packages first; selecting it before installing those packages
-will intentionally stop provisioning. To rehearse Walker instead, first follow
-[`../manual-apps/walker/README.md`](../manual-apps/walker/README.md) and record
-that manual step. See [`../manual-apps/README.md`](../manual-apps/README.md) for
-the separate vendor applications; the provisioner does not install them.
+At **Desktop launcher [walker/fuzzel]**, press Enter to select the default,
+**walker**, after following [`../manual-apps/walker/README.md`](../manual-apps/walker/README.md)
+to review and install its pinned manual packages. If those packages are not
+installed, provisioning stops with instructions. Choose **fuzzel** only if you
+want the optional launcher from signed Arch packages instead. See
+[`../manual-apps/README.md`](../manual-apps/README.md) for the separate vendor
+applications; the provisioner does not install them.
 
 After successful provisioning, rerun the same command with the same launcher
 choice and confirm Ansible reports zero changes and no failures. Follow

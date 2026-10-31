@@ -2,7 +2,8 @@
 
 Reviewed on 2026-10-28 for x86_64 Arch. Package versions are observations, not
 pins. Refresh this review when recipes, source URLs, privileges, or signatures
-change. The apps role installs five applications plus supporting packages from
+change. The apps role installs the declared applications, including Firefox for initial
+browser access, plus supporting packages from
 signed official Arch repositories, and Bitwarden Desktop from the verified
 Flathub listing.
 The desktop role also installs selected official command-line tools and the
@@ -10,6 +11,17 @@ checksum-pinned LocalSend AppImage. The four AUR applications are built,
 inspected, and installed with reviewed one-off commands in a disposable VM; the
 latest clean-VM evidence is below. Hyprmon is built separately from its pinned
 upstream source. No AUR automation is added to Ansible.
+
+## First-boot browser fallback (2026-10-30)
+
+Firefox is declared in the apps role and first-boot prerequisites, from the
+signed official Arch repositories. Noto fonts and the PipeWire JACK provider
+are selected explicitly so a fresh user need not choose ambiguous dependency
+providers. `hexen-desktop browser` and `browser-private` prefer the separately
+reviewed Zen executable when available and otherwise launch Firefox. Normal
+and private fallback selection has focused tests; real first-boot GUI and URL
+opening acceptance remain part of the fresh-VM checklist. Firefox follows
+normal `pacman -Syu` updates.
 
 ## Upstream review cadence
 

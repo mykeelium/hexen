@@ -1,6 +1,6 @@
 # Walker manual package setup
 
-Walker is an optional install-time launcher choice. It needs Walker, Elephant,
+Walker is the default launcher choice. It needs Walker, Elephant,
 and six Elephant providers before provisioning can select it. The exact recipe
 commits and upstream source hashes are in [`sources.lock`](sources.lock).
 
@@ -16,14 +16,30 @@ Provisioning does not clone recipes, build packages, or add a pacman repository.
 Build as the regular desktop user and install the exact inspected archives
 yourself. Do not use an AUR helper or run `makepkg` as root.
 
+## Guided first-boot setup
+
+On a new installation, run `./install/first-boot.sh --vm` from the permanent
+checkout as your regular user (omit `--vm` for an accepted physical install).
+This installs build prerequisites before Walker and opens each locked recipe
+for review, then shows built package metadata, files and hashes before asking
+permission to install those exact archives. It builds Elephant before its
+providers. When all components are already installed, first-boot setup displays their
+versions and asks whether to reuse those trusted builds. Otherwise it checks
+out the locked commits and rebuilds all providers with the current toolchain;
+it does not silently select newer recipes.
+
 ## Build and inspect
 
-Start from a fully updated Arch installation. The base setup supplies
-`base-devel`; Walker's source build additionally needs Cargo, Go, and the
-declared official dependencies. `makepkg --syncdeps` resolves official
-dependencies such as `gtk4-layer-shell`, `poppler-glib`, `cairo`, `fd`, and
-`libqalculate`. Recheck these against the current recipe and system before
-building.
+For the manual path, install the official prerequisites before provisioning:
+
+```sh
+sudo pacman -Syu --needed base-devel git go rust gobject-introspection protobuf gtk4-layer-shell poppler-glib cairo fd libqalculate less pipewire-jack noto-fonts
+```
+
+Review the transaction before accepting it. Rust supplies Cargo. The PipeWire
+JACK and Noto font packages make dependency provider choices explicit. Then
+`makepkg --syncdeps` resolves any remaining official dependencies. Recheck
+these against the pinned recipe and current system before building.
 
 Clone each recipe and check out the exact commit from `sources.lock`:
 

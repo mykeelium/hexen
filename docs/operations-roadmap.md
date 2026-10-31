@@ -10,6 +10,28 @@ this repository with Ansible. This is not a custom Arch ISO. Keeping the
 official installer and a reviewable post-install repository is simpler to
 update and recover; a custom ISO can be a separate project if it becomes useful.
 
+## New-user installation workflow
+
+- [x] Current install guides consistently select Walker by default; its reviewed
+  package build remains a prerequisite to provisioning.
+- [x] Add an experimental generated Archinstall configuration entry point:
+  `install/archinstall/hexen-install.sh`. It defaults to preview, accepts only
+  blank disks, and keeps credentials in memory for the interactive installer.
+- [ ] Rehearse the generated configuration on a fresh disposable VM disk:
+  verify disk/encryption and account settings, final confirmation, encrypted
+  boot, first login, and subsequent Walker/provisioning setup. Source review
+  and focused tests do not establish installation acceptance.
+- [x] Add guided first-boot prerequisites, pinned Walker recipe/archive review,
+  Firefox browser fallback, and a basic health report. Fresh-VM end-to-end
+  acceptance of this new first-boot path remains open. See the
+  [installer rehearsal record](installer-preview-validation-2026-10-30.md) for
+  corrected integration failures and the remaining checks.
+- [x] Add a public quickstart, known issues, bug-report template and release
+  checklist. Original Hexen code is MIT licensed; third-party asset review
+  remains a release gate.
+- [ ] Consider an Archiso build/release workflow after the guided installer is
+  accepted; publish checksums and review release provenance.
+
 ## What already exists
 
 - [x] Archinstall choices and a Limine/LUKS2/Btrfs boot contract are documented.
