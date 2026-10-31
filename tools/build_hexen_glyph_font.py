@@ -13,8 +13,8 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.svgLib.path import parse_path
 
 ROOT = Path(__file__).resolve().parents[1]
-SVG_HN = ROOT / "assests/hexen_h_and_n.svg"
-SVG_E3 = ROOT / "assests/hexen_e_and_3.svg"
+SVG_HN = ROOT / "assets/hexen_h_and_n.svg"
+SVG_E3 = ROOT / "assets/hexen_e_and_3.svg"
 DEFAULT_OUTPUT = ROOT / "config/fonts/HexenGlyphs-Regular.ttf"
 SVG_NS = "http://www.w3.org/2000/svg"
 UNITS_PER_EM = 1000
