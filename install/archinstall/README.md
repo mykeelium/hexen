@@ -25,7 +25,8 @@ cd hexen-main
 ```
 
 This previews the plan without partitioning. It asks for a disk, hostname,
-username, timezone, keyboard layout, locale, and mirror country code. Review the
+username, timezone, locale, and mirror country code. The preview uses a US
+keyboard layout; keep that layout in the Archinstall review. Review the
 plain-language summary; add `--json` to inspect the generated JSON. To launch the experimental install on a disposable disk, rerun:
 
 ```sh

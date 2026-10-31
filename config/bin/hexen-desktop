@@ -2,6 +2,17 @@
 set -euo pipefail
 missing() { notify-send 'Hexen' "$1 is not installed. See docs/app-sources.md."; exit 1; }
 
+open_guide() {
+  local helper_path guide
+  helper_path=$(realpath -- "$0")
+  guide=$(realpath -- "$(dirname -- "$helper_path")/../../$1") || {
+    notify-send 'Hexen' 'Guide is missing from the Hexen checkout.'
+    exit 1
+  }
+  [[ -r $guide ]] || { notify-send 'Hexen' 'Guide is unavailable in the Hexen checkout.'; exit 1; }
+  exec ghostty -e less "$guide"
+}
+
 screenshot_path() {
   local directory="$HOME/Pictures/Screenshots" stamp candidate suffix=0
   mkdir -p -- "$directory"
@@ -135,7 +146,9 @@ case "${1:-}" in
     [[ -n $choice ]] || exit 0
     printf '%s\n' "$choice" | cliphist decode | wl-copy ;;
   monitors)
-    command -v hyprmon >/dev/null || missing Hyprmon
+    if ! command -v hyprmon >/dev/null; then
+      open_guide install/manual-apps/hyprmon/README.md
+    fi
     state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
     if [[ -r "$HOME/.config/hexen/state-home" ]]; then
       IFS= read -r state_home < "$HOME/.config/hexen/state-home" || true
@@ -160,14 +173,19 @@ case "${1:-}" in
       'Annotated region') capture_screenshot annotate ;;
     esac ;;
   menu)
-    choice=$(printf '%s\n' 'Applications' 'Themes' 'Screensaver' 'Display settings' 'Edit keybindings' 'Edit Hyprland appearance' 'System' | pick_menu 'Hexen: ') || exit 0
+    choice=$(printf '%s\n' 'Getting started' 'Applications' 'Network' 'Audio' 'Bluetooth' 'Review updates' 'Diagnostics' 'Themes' 'Screensaver' 'Display settings' 'Edit keybindings' 'Edit Hyprland appearance' 'System' | pick_menu 'Hexen: ') || exit 0
     case "$choice" in
+      'Getting started') open_guide docs/getting-started.txt ;;
       Applications) exec "$0" launcher ;;
+      Network) exec ghostty -e nmtui ;;
+      Audio) exec pavucontrol ;;
+      Bluetooth) exec ghostty --class=io.github.hexen.bluetui -e bluetui ;;
+      'Review updates') exec ghostty --class=io.github.hexen.updatereview -e hexen update-monitor review --tui ;;
+      Diagnostics) exec ghostty -e bash -c 'hexen doctor 2>&1 | less' ;;
       Themes) exec "$HOME/.local/bin/hexen-theme" ;;
       Screensaver) exec "$0" screensaver ;;
       'Display settings') exec "$0" monitors ;;
-      'Edit keybindings') exec ghostty nvim "$HOME/.config/hypr/bindings.lua" ;;
-      'Edit Hyprland appearance') exec ghostty nvim "$HOME/.config/hypr/theme.lua" ;;
+      'Edit keybindings'|'Edit Hyprland appearance') exec ghostty nvim "$HOME/.config/hypr/local.lua" ;;
       System) exec "$0" system-menu ;;
     esac ;;
   system-menu)

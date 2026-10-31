@@ -11,6 +11,8 @@
   test disks. It does not provide a wipe, dual-boot, or reinstall workflow.
 - UEFI x86_64 only; Secure Boot, BIOS, RAID/LVM and multi-disk layouts are outside
   the supported preview. Physical hardware compatibility is not established.
+- The generated preview supports the US keyboard layout only. Other layouts
+  need a verified mapping across console, graphical login and lock screen.
 - Walker and Elephant providers require reviewed source builds. First-boot
   setup now guides those builds, but can be slow and still requires inspecting
   community packaging recipes. AUR updates are not applied by pacman -Syu.

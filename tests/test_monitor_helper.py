@@ -9,6 +9,24 @@ HELPER = Path(__file__).resolve().parents[1] / 'config/bin/hexen-desktop'
 
 
 class MonitorHelperTest(unittest.TestCase):
+    def test_missing_hyprmon_opens_install_instructions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bindir = root / 'bin'
+            bindir.mkdir()
+            for name in ('bash', 'realpath', 'dirname'):
+                (bindir / name).symlink_to('/usr/bin/' + name)
+            terminal = bindir / 'ghostty'
+            terminal.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$MONITOR_TEST_RESULT"\n')
+            terminal.chmod(0o755)
+            result_file = root / 'result'
+            result = subprocess.run([str(HELPER), 'monitors'],
+                env={**os.environ, 'HOME': str(root), 'PATH': str(bindir), 'MONITOR_TEST_RESULT': str(result_file)},
+                capture_output=True, text=True, timeout=4)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result_file.read_text().splitlines(), ['-e', 'less',
+                str(HELPER.parents[2] / 'install/manual-apps/hyprmon/README.md')])
+
     def test_hyprmon_uses_machine_state_and_preserves_existing_config(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

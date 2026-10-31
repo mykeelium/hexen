@@ -57,5 +57,9 @@ class GeneratorTests(unittest.TestCase):
         self.assertNotIn('custom_commands', cfg)
         self.assertNotIn('auth_config', cfg)
 
+    def test_unaccepted_console_layout_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'US keyboard'):
+            self.g.configuration('/dev/vda', 64*2**30, 512, 'hexen', 'UTC', 'de', 'en_US', 'US')
+
 if __name__ == '__main__':
     unittest.main()

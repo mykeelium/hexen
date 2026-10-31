@@ -1,6 +1,6 @@
 -- Adapted from Omarchy 8e03151647ef210ce9e313180e642d3e58dbe9a6.
 -- See docs/licenses/omarchy.txt and docs/desktop.md for parity/deviations.
--- This is the one place to edit keyboard shortcuts. Local overrides load last.
+-- Shared keyboard shortcuts. Machine-local overrides load last from local.lua.
 local d = hl.dsp
 local function bind(key, description, action, options)
   options = options or {}
@@ -28,7 +28,7 @@ command('SUPER + Space', 'Launch apps', helper .. 'launcher')
 command('SUPER + ALT + Space', 'Hexen menu', helper .. 'menu')
 command('SUPER + Escape', 'System menu', helper .. 'system-menu')
 command('XF86PowerOff', 'System menu', helper .. 'system-menu', { locked = true })
-command('SUPER + K', 'View/edit key bindings', 'ghostty nvim "$HOME/.config/hypr/bindings.lua"')
+command('SUPER + K', 'Edit local Hyprland settings', 'ghostty nvim "$HOME/.config/hypr/local.lua"')
 command('SUPER + SHIFT + Space', 'Toggle bar', 'pkill -SIGUSR1 -x waybar')
 command('SUPER + CTRL + L', 'Lock', 'loginctl lock-session')
 command('Print', 'Capture region, save and copy', helper .. 'screenshot')

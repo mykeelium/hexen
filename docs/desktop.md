@@ -6,15 +6,25 @@ binding reference, especially `default/hypr/bindings/tiling-v2.conf` and app
 bindings. Its license is retained in [licenses/omarchy.txt](licenses/omarchy.txt).
 No host desktop configuration or Omarchy source was changed.
 
-The owner asked to stay close to Omarchy defaults and keep shortcuts easy to
-change. The file to edit is [`config/hypr/bindings.lua`](../config/hypr/bindings.lua).
-The role links it through the selected user's config directory, so saving the
-repository file changes the desktop configuration. After editing, run
-`hyprctl reload` and `hyprctl configerrors`. A private per-machine
-`config/hypr/local.lua` can override settings or unbind/rebind shortcuts last;
-this file is git-ignored. Keep shared changes in the tracked files.
+The shared shortcuts are in [`config/hypr/bindings.lua`](../config/hypr/bindings.lua).
+For personal changes, open **Super+K** or the Hexen menu's edit actions. They
+open `~/.config/hypr/local.lua`; Neovim creates it when you save a new file.
+This machine-local file loads last and is ignored by Git. For example, add
+`hl.config({ general = { gaps_in = 8 } })` to change the inner window gap.
+After saving, run `hyprctl reload` and `hyprctl configerrors`; remove your change
+and reload again to undo it. The shared binding and theme files remain available
+as references; editing them changes tracked project files and can prevent the
+Hexen update workflow until those changes are resolved.
 
 ## Provision and start
+
+Open the Hexen menu with **Super+Alt+Space** or the leftmost Waybar icon.
+**Getting started** opens an offline guide to the essential shortcuts and help.
+It includes Network (the NetworkManager terminal interface), Audio, Bluetooth,
+Review updates, and Diagnostics, along with themes, display settings, and the
+system menu. Diagnostics shows a local read-only report; press `q` to close it.
+Use the arrow keys and Enter to navigate the network interface; Escape or Quit
+closes it. Bluetooth and update review also have the shortcuts listed below.
 
 For a fresh setup, clone this repository into the target user's writable home
 directory and run [`install/first-boot.sh`](../install/first-boot.sh) (add `--vm`
@@ -75,7 +85,7 @@ provides a test login in the disposable VM; it disappears on reboot.
 | Super+Shift+/ | 1Password; requires manual installation |
 | Super+Space | Selected application launcher through `hexen-desktop` |
 | Super+Alt+Space / Super+Escape | Hexen menu / system menu |
-| Super+K | View/edit the binding file in Neovim |
+| Super+K | Edit local Hyprland overrides in Neovim |
 | Super+W / J / P / T | Close / split / pseudo / floating |
 | Super+F / Alt+F / Ctrl+F | Fullscreen / maximized / client fullscreen |
 | Super+O / L | Float-and-pin / dwindle-scrolling workspace toggle |
@@ -110,7 +120,7 @@ rather than installing Omarchy's framework:
   selected backend; an old backend config link may remain but is unused. An
   already-running Walker/Elephant process can remain in the current session
   until logout; the next login starts the selected session integration.
-  Menus and Super+K expose this project's config.
+  Menus and Super+K open the machine-local override file.
 - Ghostty replaces Omarchy's terminal resolver. Working-directory inheritance and
   launch-or-focus behavior are not implemented yet.
 - Zellij attaches to or creates a named `Work` session. `zoxide` provides the
@@ -341,7 +351,8 @@ preview, artwork customization, and its separate authentication policy.
 
 Open **Super+Alt+Space → Display settings** for Hyprmon's monitor arrangement
 screen. [Install its pinned Lua-capable build](../install/manual-apps/hyprmon/)
-first. Saved layouts are machine state and do not rewrite the shared config.
+first. If it is missing, Display settings opens those installation instructions.
+Saved layouts are machine state and do not rewrite the shared config.
 
 When Walker is selected, open it with **Super+Space**:
 

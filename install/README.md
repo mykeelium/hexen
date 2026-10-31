@@ -51,17 +51,19 @@ Before adding desktop configuration, confirm that the VM boots through Limine, r
 
 After first boot, follow the [public quickstart](../docs/quickstart.md): clone
 this repository to its long-term location and run [`first-boot.sh`](first-boot.sh)
-(add `--vm` in a VM) as the regular desktop account. This prepares Walker and
-then runs [`provision.sh`](provision.sh). It audits boot
+(add `--vm` in a VM) as the regular desktop account. Choose Walker or Fuzzel;
+first-boot setup prepares Walker if selected, then runs
+[`provision.sh`](provision.sh). It audits boot
 and applies the repeatable Ansible roles after showing an interactive summary.
 The four manually reviewed third-party applications still follow their separate
 procedure in [`manual-apps/README.md`](manual-apps/README.md).
 
-The provisioner then asks which launcher to configure. Walker is the default.
-Before selecting it, follow [`manual-apps/walker/README.md`](manual-apps/walker/README.md)
-to review, build, inspect, and explicitly install the pinned Walker/Elephant
-packages as your regular user. Provisioning checks that prerequisite; it does
-not build or install AUR recipes. Fuzzel is the optional alternative and comes
+Standalone provisioning asks which launcher to configure. Walker is the default.
+When running standalone provisioning, first follow
+[`manual-apps/walker/README.md`](manual-apps/walker/README.md) to review, build,
+inspect, and install the pinned Walker/Elephant packages if selecting Walker.
+The first-boot script guides this review and installation. The provisioner checks
+the prerequisite; it does not build or install AUR recipes. Fuzzel comes
 from Arch's signed repositories. Both choices route Super+Space,
 Super+Escape, the Hexen menu, and the clipboard picker through the selected
 launcher. Re-running provisioning lets you choose again; an older backend's

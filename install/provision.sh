@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: install/provision.sh [--vm] [--review] [--help]
+Usage: install/provision.sh [--vm] [--review] [--launcher walker|fuzzel] [--help]
 
 Provision this Arch Linux installation with the repository's system and desktop
 configuration. Run it as the account that should own the desktop configuration,
@@ -12,20 +12,31 @@ not as root. It does not partition disks or run Archinstall.
 --vm leaves libvirt's default network unmanaged to avoid a nested NAT subnet
 collision. It still provisions the desktop, libvirt sockets, and storage pool.
 --review runs Ansible check mode with diffs, then asks separately before applying.
+--launcher selects the desktop launcher without prompting for it again.
 EOF
 }
 
 vm_mode=false
 review_mode=false
+desktop_launcher=''
 while (( $# )); do
   case "$1" in
     --vm) vm_mode=true ;;
     --review) review_mode=true ;;
+    --launcher)
+      (( $# >= 2 )) || { usage >&2; exit 2; }
+      desktop_launcher=$2
+      shift ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
   shift
 done
+
+case "$desktop_launcher" in
+  ''|walker|fuzzel) ;;
+  *) printf 'Invalid launcher choice: %s. Choose fuzzel or walker.\n' "$desktop_launcher" >&2; exit 2 ;;
+esac
 
 if (( EUID == 0 )); then
   printf 'Run this script as your regular desktop account, not root.\n' >&2
@@ -83,15 +94,14 @@ case "$answer" in
   y|Y|yes|YES) ;;
   *)
     printf 'Provisioning cancelled.\n'
-    if [[ $review_mode == true ]]; then
-      exit 3
-    fi
-    exit 0
+    exit 3
     ;;
 esac
 
-read -r -p 'Desktop launcher [walker/fuzzel] (default: walker): ' launcher_choice
-desktop_launcher="${launcher_choice:-walker}"
+if [[ -z $desktop_launcher ]]; then
+  read -r -p 'Desktop launcher [walker/fuzzel] (default: walker): ' launcher_choice
+  desktop_launcher="${launcher_choice:-walker}"
+fi
 case "$desktop_launcher" in
   fuzzel|walker) ;;
   *)

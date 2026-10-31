@@ -1,5 +1,10 @@
 # Developer preview release checklist
 
+For the ordered implementation and acceptance tasks from the newcomer review,
+see the [beta readiness follow-up plan](superpowers/plans/2026-10-30-beta-readiness-follow-up.md).
+That plan separates the proposed VM preview from later desktop and hardware work;
+the checkboxes below remain the release decision record.
+
 - [ ] Accept a fresh generated install through first boot, first-boot setup,
   encrypted reboot and graphical login using a different username.
 - [ ] Verify Walker apps, calculator, URL search, normal/private browser launch,

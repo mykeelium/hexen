@@ -50,6 +50,8 @@ def mirror_configuration(urls):
 
 
 def configuration(device, size, sector, hostname, timezone, keyboard, locale, region):
+    if keyboard != 'us':
+        raise ValueError('The preview supports the US keyboard layout only.')
     def amount(value):
         return {'unit': 'B', 'value': value, 'sector_size': {'unit': 'B', 'value': sector}}
     def partition(start, length, fs, mount, flags):
@@ -181,7 +183,8 @@ def main():
         raise ValueError('Choose a regular account name, not root.')
     timezone = ask('Timezone', 'America/New_York', validator=lambda value: bool(ZoneInfo(value)))
     ZoneInfo(timezone)
-    keyboard = ask('Console keyboard layout', 'us', r'[A-Za-z0-9][A-Za-z0-9_-]*')
+    keyboard = 'us'
+    print('Keyboard layout: US (the only layout supported by this preview).')
     locale = ask('UTF-8 locale (without .UTF-8)', 'en_US', r'[a-z]{2,3}_[A-Z]{2}')
     region = ask('Mirror country code', 'US', r'[A-Z]{2}', validator=lambda value: any(m['country_code'] == value and m['protocol'] == 'https' and m['active'] and m['completion_pct'] == 1 for m in mirrors))
     region_name, urls = resolve_mirrors(mirrors, region)

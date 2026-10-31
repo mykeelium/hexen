@@ -12,3 +12,6 @@
 
 # Local Python bytecode, including installer checks.
 **/__pycache__/
+
+.env
+

@@ -82,8 +82,16 @@ class ProvisionCliTest(unittest.TestCase):
 
     def test_cancel_does_not_run_ansible(self):
         code, output, calls = self.run_wrapper([], 'n\n')
-        self.assertEqual(code, 0, output)
+        self.assertEqual(code, 3, output)
         self.assertEqual(calls, [])
+
+    def test_explicit_launcher_is_forwarded_without_second_prompt(self):
+        code, output, calls = self.run_wrapper(['--launcher', 'fuzzel'], 'y\n')
+        self.assertEqual(code, 0, output)
+        self.assertNotIn('Desktop launcher [', output)
+        playbooks = [args for args in calls if Path(args[0]).name == 'ansible-playbook']
+        self.assertEqual(len(playbooks), 2)
+        self.assertTrue(all(any('desktop_launcher=fuzzel' in arg for arg in args) for args in playbooks))
 
     def test_invalid_launcher_does_not_run_ansible(self):
         code, output, calls = self.run_wrapper([], 'y\ninvalid\n')

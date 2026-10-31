@@ -10,6 +10,8 @@ upgrade acceptance remain open. See [known issues](known-issues.md).
   disk of at least 40 GiB. Do not attach disks containing data you need.
 - Official Arch installation media with **Archinstall 4.5**. The recorded
   rehearsal ISO is 2026.10.01. Other installer versions are refused.
+- A US keyboard layout. Other layouts are not yet supported by the generated
+  preview; the desktop currently uses US regardless of the console layout.
 - Internet access throughout setup; package builds can take substantial time
   and disk space. Wi-Fi must be connected before running the installer.
 - The account password and encryption passphrase you choose, retained outside
@@ -47,7 +49,8 @@ blank VM disk, launch installation with:
 Read the erase confirmation and enter the selected disk path exactly when
 prompted. Password entry is hidden; no asterisks appearing is normal. Review
 Disk encryption, Authentication, Limine, and the entire plan inside Archinstall
-before choosing Install. Do not select Save credentials. Mirror checks, keyring
+before choosing Install. Keep the keyboard layout set to US in Archinstall.
+Do not select Save credentials. Mirror checks, keyring
 synchronization, encryption setup, package downloads and source builds can take
 several minutes; read the current progress before restarting the installer.
 If installation fails after disk changes, stop and inspect the error. This
@@ -61,6 +64,11 @@ After installation succeeds, exit Archinstall, reboot, and boot the installed
 disk instead of the ISO. Enter the disk passphrase. Log into the shell with
 your new username and account password. A shell login at this stage is expected:
 Hexen installs its graphical login during the next stage.
+
+Check that the installed system is online before cloning. A wired VM normally
+connects automatically. If Wi-Fi needs reconnecting, run `nmtui`, choose
+**Activate a connection**, select your network, and enter its password. Quit
+`nmtui`, then check the connection with `curl -I https://archlinux.org`.
 
 Verify encrypted Btrfs boot using [the boot checks](../install/archinstall/README.md#verify-after-first-boot).
 Then clone the repository again onto the installed disk; the live ISO checkout
@@ -78,21 +86,22 @@ source updates, so the installed checkout needs a local branch with an upstream.
 The `--vm` command must run inside the target VM; it refuses a detected physical
 host. Keep this checkout in place; desktop configuration links point into it.
 
-The command installs build tools, the documented official Walker dependencies,
-and Firefox, then guides you through review
+The command asks whether to use Walker or Fuzzel. Fuzzel comes from the official
+Arch repositories. For Walker, it installs build tools and the documented
+official dependencies, then guides you through review
 of each pinned Walker/Elephant recipe and built archive, then runs Ansible.
 In the recipe pager, scroll to read and press `q` to leave. Approve only recipes
 you are comfortable executing. On a retry, you can explicitly reuse already installed Walker packages after
 checking the displayed versions. Reuse only providers built together with
 Elephant using the same Go toolchain. Sudo and Ansible's `BECOME password` both mean
-your account password. Choose the default Walker launcher when provisioning asks.
+your account password. The selected launcher is passed to provisioning.
 Official package transactions and each third-party build/install require review.
 
 ## 3. Sign into Hexen
 
 After setup succeeds, reboot, unlock the disk, and sign in at the graphical
 login (SDDM). On the first sign-in, select **Hyprland (UWSM-managed)**
-in the session selector. Open Walker with Super+Space. Super+Shift+B opens Zen if installed,
+in the session selector. Open the selected launcher with Super+Space. Super+Shift+B opens Zen if installed,
 otherwise Firefox. See [desktop shortcuts](desktop.md).
 
 If setup stopped, keep the terminal open, read the error, correct it, and rerun

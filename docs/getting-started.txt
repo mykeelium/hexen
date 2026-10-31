@@ -1,0 +1,37 @@
+Welcome to Hexen
+================
+
+This guide opens in a terminal. Use the arrow keys to scroll; press q to close.
+Super is the key usually marked with a Windows logo on a PC keyboard.
+
+Start using your desktop
+------------------------
+Super+Space          Find and open an application.
+Super+Enter          Open a terminal.
+Super+Shift+B        Open your browser.
+Super+Shift+F        Open the file manager.
+Super+W              Close the focused window.
+Super+1 through 0    Switch workspace.
+Super+Shift+1 to 0   Move the focused window to a workspace.
+Super+Ctrl+L         Lock your session.
+Super+Escape         Lock, suspend, log out, restart or shut down.
+Super+Alt+Space      Open the Hexen menu.
+
+In the Hexen menu, Network connects to Wi-Fi, Audio selects sound devices,
+Bluetooth manages paired devices, and Review updates opens the update review.
+Diagnostics displays a local, read-only system report; press q to close it.
+The leftmost icon in the top bar also opens the Hexen menu. Super+K opens your
+local Hyprland settings. See docs/desktop.md in your Hexen checkout for more.
+
+If the graphical login or desktop does not work
+------------------------------------------------
+Press Ctrl+Alt+F2 to try another text console, then sign in with your account.
+The desktop and recovery guides in your Hexen checkout describe the next steps:
+docs/desktop.md and docs/recovery.md. To inspect the system from a terminal,
+run: hexen doctor
+
+Getting help
+------------
+See docs/quickstart.md in the Hexen checkout for reporting instructions. Share
+the version, failed stage and relevant error; review logs before sharing and
+remove passwords, tokens, private keys and recovery material.
