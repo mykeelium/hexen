@@ -7,7 +7,7 @@ with LLMs and documentation, code is cheap. I think there is going to be a
 stedy trend of each of us having our own, curated functionality that we can 
 steer, so here is mine! I hope you enjoy.
 
-I have personally like how streamlined the process can be, and the ability to 
+I have personally liked how streamlined the process can be, and the ability to 
 make and use little tools to help make your PC more robust. But at the same time,
 you do not have to trade off aesthetics to be able to get functionality.
 
