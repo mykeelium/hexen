@@ -146,8 +146,9 @@ case "${1:-}" in
     [[ -n $choice ]] || exit 0
     printf '%s\n' "$choice" | cliphist decode | wl-copy ;;
   monitors)
-    if ! command -v hyprmon >/dev/null; then
-      open_guide install/manual-apps/hyprmon/README.md
+    monitor_tool="$HOME/.local/bin/hyprmon"
+    if [[ ! -x $monitor_tool ]]; then
+      monitor_tool=$(command -v hyprmon) || open_guide install/manual-apps/hyprmon/README.md
     fi
     state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
     if [[ -r "$HOME/.config/hexen/state-home" ]]; then
@@ -160,7 +161,7 @@ case "${1:-}" in
     if [[ ! -e $monitor_config && ! -L $monitor_config ]]; then
       (set -o noclobber; printf '%s\n' '-- Machine-local Hyprmon target; Hexen loads the generated hyprmon.lua.' > "$monitor_config")
     fi
-    exec ghostty -e env "HYPRLAND_CONFIG=$monitor_config" hyprmon ;;
+    exec ghostty -e env "HYPRLAND_CONFIG=$monitor_config" "$monitor_tool" ;;
   screensaver) exec "$HOME/.local/bin/hexen-screensaver" start ;;
   screenshot)
     capture_screenshot region ;;
@@ -180,8 +181,8 @@ case "${1:-}" in
       Network) exec ghostty -e nmtui ;;
       Audio) exec pavucontrol ;;
       Bluetooth) exec ghostty --class=io.github.hexen.bluetui -e bluetui ;;
-      'Review updates') exec ghostty --class=io.github.hexen.updatereview -e hexen update-monitor review --tui ;;
-      Diagnostics) exec ghostty -e bash -c 'hexen doctor 2>&1 | less' ;;
+      'Review updates') exec ghostty --class=io.github.hexen.updatereview -e "$HOME/.local/bin/hexen" update-monitor review --tui ;;
+      Diagnostics) exec ghostty -e bash -c '"$HOME/.local/bin/hexen" doctor 2>&1 | less' ;;
       Themes) exec "$HOME/.local/bin/hexen-theme" ;;
       Screensaver) exec "$0" screensaver ;;
       'Display settings') exec "$0" monitors ;;
