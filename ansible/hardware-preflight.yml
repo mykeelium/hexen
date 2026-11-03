@@ -1,0 +1,60 @@
+---
+- name: Resolve the desktop account for saved hardware selection
+  ansible.builtin.getent:
+    database: passwd
+    key: '{{ desktop_user }}'
+  when: desktop_user is defined
+
+- name: Inspect the saved hardware profile
+  ansible.builtin.stat:
+    path: '{{ ansible_facts.getent_passwd[desktop_user][4] }}/.config/hexen/hardware-profile'
+    follow: false
+  register: _hardware_saved
+  when: desktop_user is defined
+
+- name: Refuse unsafe saved hardware settings
+  ansible.builtin.assert:
+    that:
+      - not (_hardware_saved.stat.islnk | default(false))
+      - not (_hardware_saved.stat.exists | default(false)) or (_hardware_saved.stat.isreg | default(false))
+      - not (_hardware_saved.stat.exists | default(false)) or _hardware_saved.stat.uid == ansible_facts.getent_passwd[desktop_user][1] | int
+    fail_msg: 'Hardware preflight: saved profile must be a regular desktop-user-owned file.'
+  when: desktop_user is defined
+
+- name: Read the saved hardware profile
+  ansible.builtin.slurp:
+    src: '{{ ansible_facts.getent_passwd[desktop_user][4] }}/.config/hexen/hardware-profile'
+  register: _hardware_saved_content
+  when: _hardware_saved.stat.exists | default(false)
+
+- name: Resolve the hardware profile without changing an existing selection
+  ansible.builtin.set_fact:
+    desktop_hardware_profile: '{{ desktop_hardware_profile | default((_hardware_saved_content.content | default("Z2VuZXJpYw==") | b64decode | trim)) }}'
+
+- name: Validate explicit and saved hardware selections
+  ansible.builtin.assert:
+    that:
+      - desktop_hardware_profile in ['generic', 'xps-14-9440']
+      - _saved in ['generic', 'xps-14-9440']
+      - _saved != 'xps-14-9440' or desktop_hardware_profile == _saved
+      - desktop_hardware_profile == 'generic' or desktop_user is defined
+    fail_msg: 'Hardware preflight: unknown profile or unsafe removal of the installed XPS profile.'
+  vars:
+    _saved: '{{ _hardware_saved_content.content | default("Z2VuZXJpYw==") | b64decode | trim }}'
+
+- name: Audit the selected physical hardware before system changes
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - '{{ playbook_dir }}/../install/hardware.py'
+      - --profile
+      - '{{ desktop_hardware_profile }}'
+      - --installed
+  register: _hardware_audit
+  changed_when: false
+  check_mode: false
+  when: desktop_hardware_profile != 'generic'
+
+- name: Resolve the reviewed hardware package set
+  ansible.builtin.set_fact:
+    _desktop_hardware_packages: '{{ (_hardware_audit.stdout | from_json).packages if desktop_hardware_profile != "generic" else [] }}'

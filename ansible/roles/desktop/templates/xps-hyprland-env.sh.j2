@@ -1,0 +1,5 @@
+# Managed by Hexen. Reboot after driver/rule installation; no live GPU rebinding.
+# Keep both GPUs available for connectors wired to either device.
+if [ -z "${AQ_DRM_DEVICES:-}" ] && [ -e /dev/dri/hexen-intel ] && [ -e /dev/dri/hexen-nvidia ]; then
+    export AQ_DRM_DEVICES=/dev/dri/hexen-intel:/dev/dri/hexen-nvidia
+fi

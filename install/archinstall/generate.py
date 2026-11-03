@@ -15,6 +15,9 @@ import urllib.request
 import uuid
 from zoneinfo import ZoneInfo
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from hardware import PACKAGES, validate as validate_hardware
+
 MIB = 2**20
 
 
@@ -49,7 +52,9 @@ def mirror_configuration(urls):
     return {'mirror_regions': {}, 'custom_servers': [{'url': url.rstrip('/') + '/$repo/os/$arch'} for url in urls]}
 
 
-def configuration(device, size, sector, hostname, timezone, keyboard, locale, region):
+def configuration(device, size, sector, hostname, timezone, keyboard, locale, region, hardware='generic'):
+    if hardware not in PACKAGES:
+        raise ValueError('Unknown hardware profile: ' + hardware)
     if keyboard != 'us':
         raise ValueError('The preview supports the US keyboard layout only.')
     def amount(value):
@@ -65,7 +70,7 @@ def configuration(device, size, sector, hostname, timezone, keyboard, locale, re
     root['btrfs'] = [dict(name=n, mountpoint=m) for n, m in
                      [('@', '/'), ('@home', '/home'), ('@log', '/var/log'), ('@pkg', '/var/cache/pacman/pkg')]]
     return dict(hostname=hostname, timezone=timezone, kernels=['linux'], ntp=True,
-                script='guided', silent=False, packages=['git', 'ansible'],
+                script='guided', silent=False, packages=list(dict.fromkeys(['git', 'ansible'] + PACKAGES[hardware])),
                 locale_config=dict(kb_layout=keyboard, sys_lang=locale, sys_enc='UTF-8'),
                 mirror_config=dict(mirror_regions={region: []}),
                 bootloader_config=dict(bootloader='Limine', uki=False, removable=False, plymouth=None),
@@ -155,11 +160,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--install', action='store_true', help='experimental: launch Archinstall after reviewing the generated plan')
     parser.add_argument('--json', action='store_true', help='also display the full generated JSON')
+    parser.add_argument('--hardware', choices=tuple(PACKAGES), default='generic', help='opt-in verified hardware profile')
     args = parser.parse_args()
     if not sys.stdin.isatty() or os.geteuid() != 0:
         raise ValueError('Run from an interactive root shell on the official Arch live ISO.')
     if not Path('/run/archiso').is_dir() or not Path('/sys/firmware/efi').is_dir() or os.uname().machine != 'x86_64':
         raise ValueError('Requires official x86_64 Arch live media booted in UEFI mode.')
+    if args.hardware != 'generic':
+        print(json.dumps(validate_hardware(args.hardware), sort_keys=True))
     if os.path.ismount('/mnt'):
         raise ValueError('Unmount /mnt first; Archinstall needs it for installation staging.')
     version = importlib.metadata.version('archinstall')
@@ -188,7 +196,7 @@ def main():
     locale = ask('UTF-8 locale (without .UTF-8)', 'en_US', r'[a-z]{2,3}_[A-Z]{2}')
     region = ask('Mirror country code', 'US', r'[A-Z]{2}', validator=lambda value: any(m['country_code'] == value and m['protocol'] == 'https' and m['active'] and m['completion_pct'] == 1 for m in mirrors))
     region_name, urls = resolve_mirrors(mirrors, region)
-    config = configuration(disk['name'], int(disk['size']), int(disk['log-sec']), hostname, timezone, keyboard, locale, region_name)
+    config = configuration(disk['name'], int(disk['size']), int(disk['log-sec']), hostname, timezone, keyboard, locale, region_name, hardware=args.hardware)
     config['mirror_config'] = mirror_configuration(urls)
     print(f"\nInstallation plan: {hostname} | account {username} (sudo)\nTimezone: {timezone} | keyboard: {keyboard} | locale: {locale}.UTF-8\nDisk: {disk['name']} | {int(disk['size'])/2**30:.1f} GiB | {disk.get('model')}\nLayout: 1 GiB EFI at /boot; remaining system space LUKS + Btrfs\nSubvolumes: @, @home, @log, @pkg | compression: zstd\nBoot: Limine | kernel: linux | zram: zstd | networking: NetworkManager\nDesktop: installed after reboot by Hexen first-boot setup")
     if args.json:

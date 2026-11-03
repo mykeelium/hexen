@@ -209,7 +209,22 @@ time.sleep(60)
         self.assertEqual(self.terminals(), [])
 
     def test_idle_mode_has_a_lock_deadline_even_without_new_idle_notifications(self):
-        launcher = "import runpy,sys,time; clock=time.monotonic; time.monotonic=lambda:clock()*100; sys.argv=[sys.argv[1],'start','--idle']; runpy.run_path(sys.argv[0],run_name='__main__')"
+        launcher = (
+            'import runpy,sys,time,types\n'
+            "sys.argv=[sys.argv[1],'start','--idle']\n"
+            "ns=runpy.run_path(sys.argv[0],run_name='hexen_test')\n"
+            "g=ns['main'].__globals__\n"
+            "real_query=g['query']\n"
+            'offset=[0]\n'
+            "g['time']=types.SimpleNamespace(monotonic=lambda:time.monotonic()+offset[0],sleep=time.sleep)\n"
+            'def query(kind):\n'
+            '    result=real_query(kind)\n'
+            "    if kind=='clients' and len(result)==2:\n"
+            '        offset[0]=151\n'
+            '    return result\n'
+            "g['query']=query\n"
+            "ns['main']()\n"
+        )
         controller = subprocess.Popen(['/usr/bin/python', '-c', launcher, str(HELPER)],
             env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.processes.append(controller)

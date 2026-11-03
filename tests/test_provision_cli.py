@@ -62,6 +62,24 @@ class ProvisionCliTest(unittest.TestCase):
             calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             return os.waitstatus_to_exitcode(status), output.decode(), calls
 
+    def test_generic_hardware_is_forwarded_to_all_playbook_runs(self):
+        code, output, calls = self.run_wrapper(['--hardware', 'generic', '--launcher', 'fuzzel'], 'y\n')
+        self.assertEqual(code, 0, output)
+        playbooks = [args for args in calls if Path(args[0]).name == 'ansible-playbook']
+        self.assertTrue(all(any('desktop_hardware_profile=generic' in arg for arg in args) for args in playbooks))
+        self.assertEqual(len(playbooks), 2)
+
+    def test_xps_cannot_be_selected_with_vm_mode(self):
+        code, output, calls = self.run_wrapper(['--vm', '--hardware', 'xps-14-9440'], '')
+        self.assertEqual(code, 2, output)
+        self.assertIn('cannot', output)
+        self.assertEqual(calls, [])
+
+    def test_unknown_hardware_never_runs_ansible(self):
+        code, output, calls = self.run_wrapper(['--hardware', 'guessed'], '')
+        self.assertEqual(code, 2, output)
+        self.assertEqual(calls, [])
+
     def test_vm_mode_forwards_network_override_to_both_playbook_runs(self):
         code, output, calls = self.run_wrapper(['--vm'], 'y\nfuzzel\n')
         self.assertEqual(code, 0, output)

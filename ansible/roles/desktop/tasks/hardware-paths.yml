@@ -1,0 +1,96 @@
+---
+- name: Validate hardware selection at the configuration boundary
+  ansible.builtin.assert:
+    that:
+      - desktop_hardware_profile | default('generic') in ['generic', 'xps-14-9440']
+    fail_msg: 'Hardware preflight: unknown hardware profile.'
+
+- name: Inspect hardware selection file before writing
+  ansible.builtin.stat:
+    path: '{{ _desktop_home }}/.config/hexen/hardware-profile'
+    follow: false
+  register: _hardware_selection_path
+
+- name: Preserve unsafe hardware selection files
+  ansible.builtin.assert:
+    that:
+      - not (_hardware_selection_path.stat.islnk | default(false))
+      - not _hardware_selection_path.stat.exists or (_hardware_selection_path.stat.isreg | default(false))
+      - not _hardware_selection_path.stat.exists or _hardware_selection_path.stat.uid == _desktop_uid | int
+    fail_msg: 'Hardware preflight: refusing an unsafe hardware-profile file.'
+
+- name: Read existing hardware selection before writing
+  ansible.builtin.slurp:
+    src: '{{ _desktop_home }}/.config/hexen/hardware-profile'
+  register: _hardware_selection_content
+  when: _hardware_selection_path.stat.exists
+
+- name: Preserve the installed hardware profile
+  ansible.builtin.assert:
+    that:
+      - _saved in ['generic', 'xps-14-9440']
+      - _saved != 'xps-14-9440' or desktop_hardware_profile | default('generic') == _saved
+    fail_msg: 'Hardware preflight: refusing an unknown selection or automatic XPS profile removal.'
+  vars:
+    _saved: '{{ _hardware_selection_content.content | default("Z2VuZXJpYw==") | b64decode | trim }}'
+
+- name: Inspect hardware configuration parents
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ _desktop_home }}/.config/uwsm'
+    - '{{ _desktop_home }}/.config/uwsm/env-hyprland.d'
+    - '{{ _desktop_hardware_etc | default("/etc") }}/udev'
+    - '{{ _desktop_hardware_etc | default("/etc") }}/udev/rules.d'
+    - '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d'
+  register: _hardware_config_parents
+  when: desktop_hardware_profile | default('generic') == 'xps-14-9440'
+
+- name: Refuse symlinked or non-directory hardware configuration parents
+  ansible.builtin.assert:
+    that:
+      - not (item.stat.islnk | default(false))
+      - not item.stat.exists or (item.stat.isdir | default(false))
+    fail_msg: 'Hardware preflight: refusing unsafe configuration directory {{ item.item }}.'
+  loop: '{{ _hardware_config_parents.results | default([]) | selectattr("stat", "defined") | list }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Inspect managed hardware configuration destinations
+  ansible.builtin.stat:
+    path: '{{ item }}'
+    follow: false
+  loop:
+    - '{{ _desktop_home }}/.config/uwsm/env-hyprland.d/10-hexen-hardware.sh'
+    - '{{ _desktop_hardware_etc | default("/etc") }}/udev/rules.d/61-hexen-xps-gpu.rules'
+    - '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d/hexen-xps-nvidia.conf'
+  register: _hardware_config_files
+  when: desktop_hardware_profile | default('generic') == 'xps-14-9440'
+
+- name: Refuse symlinked hardware configuration files
+  ansible.builtin.assert:
+    that:
+      - not (item.stat.islnk | default(false))
+      - not item.stat.exists or (item.stat.isreg | default(false))
+    fail_msg: 'Hardware preflight: refusing unsafe configuration file {{ item.item }}.'
+  loop: '{{ _hardware_config_files.results | default([]) | selectattr("stat", "defined") | list }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Read existing hardware configuration files
+  ansible.builtin.slurp:
+    src: '{{ item.item }}'
+  loop: '{{ _hardware_config_files.results | default([]) | selectattr("stat.exists", "defined") | selectattr("stat.exists") | list }}'
+  register: _hardware_existing_files
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Preserve unmanaged hardware configuration files
+  ansible.builtin.assert:
+    that:
+      - (item.content | b64decode).startswith('# Managed by Hexen')
+    fail_msg: 'Hardware preflight: refusing to replace unmanaged configuration {{ item.item.item }}.'
+  loop: '{{ _hardware_existing_files.results | default([]) | selectattr("content", "defined") | list }}'
+  loop_control:
+    label: '{{ item.item.item }}'
