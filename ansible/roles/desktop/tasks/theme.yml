@@ -1,0 +1,37 @@
+---
+- name: Check renderer availability for a theme preview
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.command:
+    argv: [python3, -c, "import shutil; raise SystemExit(0 if shutil.which('matugen') else 1)"]
+  when: ansible_check_mode
+  register: _desktop_theme_renderer
+  check_mode: false
+  changed_when: false
+  failed_when: false
+
+- name: Report pending theme regeneration when the renderer is not installed
+  ansible.builtin.debug:
+    msg: >-
+      Theme preview is unavailable because Matugen is not installed for the
+      desktop user. Theme regeneration is pending installation of its renderer;
+      generated output must be checked when provisioning applies the changes.
+  when: ansible_check_mode and _desktop_theme_renderer.rc != 0
+  changed_when: true
+
+- name: Regenerate the selected theme when rendered output changes
+  become: true
+  become_user: '{{ desktop_user }}'
+  ansible.builtin.command:
+    argv: >-
+      {{ [desktop_repo_root ~ '/config/bin/hexen-theme', 'sync'] +
+         (['--check'] if ansible_check_mode else []) }}
+  environment:
+    HOME: '{{ _desktop_home }}'
+    XDG_STATE_HOME: '{{ desktop_xdg_state_home }}'
+  register: _desktop_theme_sync
+  when: not ansible_check_mode or _desktop_theme_renderer.rc == 0
+  check_mode: false
+  changed_when: >-
+    _desktop_theme_sync.rc == 0 and
+    ((_desktop_theme_sync.stdout | from_json).changed | bool)

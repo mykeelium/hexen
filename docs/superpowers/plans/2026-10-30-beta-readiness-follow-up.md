@@ -3,9 +3,9 @@
 **Goal:** give the owner an ordered, checkable backlog for releasing a usable
 Hexen preview and then extending it to newcomers installing on hardware.
 
-**Status:** planning only. No implementation or installation acceptance is
-implied by this document. The owner will make the source changes; a future
-agent must receive an explicit implementation request before doing so.
+**Status:** implementation in progress. The source audit below records
+implemented behavior; open checkboxes retain their original acceptance
+requirements. Source checks do not establish installation acceptance.
 
 **Architecture:** retain the existing Archinstall adapter for base installation
 and Ansible for installed-system configuration. Improve their handoff and user
@@ -19,6 +19,45 @@ are separate follow-up projects, not prerequisites for every preview release.
 [release checklist](../../release-checklist.md),
 [latest rehearsal](../../installer-preview-validation-2026-10-30.md), and
 [workstation roadmap](../../operations-roadmap.md).
+
+## Source audit — 2026-11-02
+
+Audit baseline: `3374981`. This records source inspection and local tests;
+it does not accept a release candidate or replace the checkboxes below.
+
+| Area | Implemented behavior | Remaining acceptance |
+| --- | --- | --- |
+| Launcher selection | First boot selects Walker/Fuzzel before prerequisites and passes the choice to provisioning; health checks use the selected launcher | Exercise both paths on clean VMs and confirm the Arch interactive CI result |
+| Cancellation | Declining setup or provisioning returns status 3; failed Walker setup stops before provisioning and success output | Verify real terminal cancellation and failures on the candidate |
+| Retry explanation | First boot and the quickstart disclose another full system upgrade on retry | Verify the actual interrupted/retried flow |
+| Keyboard scope | Generated configuration rejects layouts other than US; quickstart documents US-only support | Test console, greeter and lock/unlock; broader layouts remain separate work |
+| Customization | Edit menu actions open the ignored local override; helper tests cover their targets | Prove a saved customization survives provisioning and leaves tracked source clean |
+| Settings/help | Menu provides networking, audio, Bluetooth, updates, diagnostics and an offline welcome guide; absent Hyprmon opens its installation guide | Exercise the actions in a new desktop session |
+| Source consistency | Quickstart prompts for a full commit at both stages; installed checkout uses a local branch at that commit with `origin/main` upstream | Choose the final candidate, verify real archive/public access and rehearse both stages on that revision |
+
+The local suite excluding `test_screensaver` passed 38 tests on this baseline.
+Interactive wrapper tests require a regular Arch account and a usable PTY;
+passing stubbed tests does not prove package installation or GUI behavior.
+The full screensaver suite still requires an environment permitting Unix sockets.
+
+Start with the [candidate acceptance procedure](../../candidate-acceptance.md).
+First boot now leaves next-step guidance to `install/health.py` and prints a
+neutral completion message only after health checks succeed. Wrapper integration
+tests cover an active graphical login, an initial setup requiring reboot, and a
+failed health check that must not report completion. Real VM acceptance remains
+open.
+
+Follow-up verification: all 62 Python tests passed with temporary Unix socket
+binding permitted, including the three new wrapper/health integration cases
+and invalid-argument coverage. First boot rejects extra arguments before host
+checks or package operations and reports usage for invalid options.
+Shell syntax and whitespace checks also passed. These results cover the working
+tree; the final committed release candidate still needs VM acceptance.
+
+The installed-checkout commands were rehearsed against a temporary local Git
+repository with a newer upstream commit: the selected older candidate was
+checked out on a clean local `hexen` branch tracking `origin/main`. This does
+not verify remote archive downloads, anonymous access or installation behavior.
 
 ## Scope and constraints
 

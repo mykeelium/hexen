@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -177,6 +178,14 @@ def render(slug: str, pack: Path, manifest: dict, stage: Path) -> None:
     if any(not (stage / name).is_file() for name in TEMPLATE_NAMES):
         raise ThemeError("Matugen completed without producing all expected theme fragments")
     wallpaper = manifest["wallpaper"]
+    if wallpaper is None:
+        wallpaper_digest = "none"
+    else:
+        with wallpaper.open("rb") as image:
+            wallpaper_digest = hashlib.file_digest(image, "sha256").hexdigest()
+    # The wallpaper is consumed directly by Hyprpaper: identical extracted
+    # colors do not mean that a changed image can skip activation.
+    (stage / "wallpaper.sha256").write_text(wallpaper_digest + "\n", encoding="ascii")
     hyprpaper = stage / "hyprpaper.conf"
     if wallpaper is None:
         hyprpaper.write_text("# Wallpaper-free theme.\n", encoding="utf-8")
@@ -260,7 +269,8 @@ def prepare_include_links(root: Path) -> list[Path]:
     return created
 
 
-def apply_theme(slug: str) -> None:
+def apply_theme(slug: str, *, only_if_changed: bool = False, check: bool = False,
+                announce: bool = True) -> bool:
     if not SLUG_RE.fullmatch(slug):
         raise ThemeError("theme slug must contain lowercase letters, digits, and single hyphens")
     pack = ROOT / slug
@@ -270,18 +280,29 @@ def apply_theme(slug: str) -> None:
     root = state_root()
     if root.is_symlink() or root.parent.is_symlink():
         raise ThemeError(f"refusing to use a symlinked generated themes path: {root}")
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if root.is_symlink() or not root.is_dir():
-        raise ThemeError(f"refusing to use unsafe generated themes path: {root}")
-    root_info = root.stat()
-    if root_info.st_uid != os.getuid() or stat.S_IMODE(root_info.st_mode) & 0o077:
-        raise ThemeError(f"generated themes directory must be user-owned and private: {root}")
+    if not check:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if root.exists():
+        if not root.is_dir():
+            raise ThemeError(f"refusing to use unsafe generated themes path: {root}")
+        root_info = root.stat()
+        if root_info.st_uid != os.getuid() or stat.S_IMODE(root_info.st_mode) & 0o077:
+            raise ThemeError(f"generated themes directory must be user-owned and private: {root}")
     old_slug = active_slug(root)
     old_target = (root / "current").resolve(strict=True) if old_slug is not None else None
-    stage = Path(tempfile.mkdtemp(prefix=f".{slug}-", dir=root))
+    stage = Path(tempfile.mkdtemp(prefix=f".{slug}-", dir=None if check else root))
     os.chmod(stage, 0o700)
     try:
         render(slug, pack, manifest, stage)
+        # matugen.toml embeds staging paths and is not consumed by desktop apps.
+        outputs = (*TEMPLATE_NAMES, "hyprpaper.conf", "wallpaper.sha256", "slug")
+        unchanged = only_if_changed and old_target is not None and all(
+            (old_target / name).is_file()
+            and (old_target / name).read_bytes() == (stage / name).read_bytes()
+            for name in outputs)
+        if check or unchanged:
+            shutil.rmtree(stage)
+            return not unchanged
         new_links = prepare_include_links(root)
         final = root / f"{slug}-{secrets.token_hex(8)}"
         stage.rename(final)
@@ -298,7 +319,9 @@ def apply_theme(slug: str) -> None:
                         link.unlink(missing_ok=True)
                 raise ThemeError(f"theme rendered, but wallpaper activation failed: {exc}") from exc
             refresh_desktop()
-        print(f"Applied {manifest['name']} ({slug})")
+        if announce:
+            print(f"Applied {manifest['name']} ({slug})")
+        return True
     except Exception:
         if stage.exists():
             shutil.rmtree(stage)
@@ -525,6 +548,8 @@ def main() -> int:
     subparsers.add_parser("list", help="list valid theme packs")
     subparsers.add_parser("current", help="print the selected theme slug")
     subparsers.add_parser("create", help="create a wallpaper-derived theme pack")
+    sync_parser = subparsers.add_parser("sync", help="regenerate the selected theme only if output changes; report JSON")
+    sync_parser.add_argument("--check", action="store_true", help="preview regeneration without changing persistent state or reloading apps")
     apply_parser = subparsers.add_parser("apply", help="validate, render, and apply a theme pack")
     apply_parser.add_argument("slug")
     args = parser.parse_args()
@@ -542,6 +567,12 @@ def main() -> int:
             create_theme_interactive()
         elif args.command == "apply":
             apply_theme(args.slug)
+        elif args.command == "sync":
+            selected = active_slug(state_root())
+            if selected is None:
+                selected = "tokyo-night"
+            changed = apply_theme(selected, only_if_changed=True, check=args.check, announce=False)
+            print(json.dumps({"changed": changed, "slug": selected}))
         else:
             selected = select_theme()
             if selected:
