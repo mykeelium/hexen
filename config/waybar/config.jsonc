@@ -9,7 +9,7 @@
   "custom/hexen": {
     "format": "󰣇",
     "tooltip": false,
-    "on-click": "hexen-desktop menu"
+    "on-click": "~/.local/bin/hexen-desktop menu"
   },
   "hyprland/workspaces": {
     "on-click": "activate",
@@ -65,7 +65,7 @@
     "format-full": "󰂅",
     "format-icons": ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"],
     "states": {"warning": 20, "critical": 10},
-    "on-click": "hexen-desktop system-menu"
+    "on-click": "~/.local/bin/hexen-desktop system-menu"
   },
   "tray": {"icon-size": 14, "spacing": 10}
 }
