@@ -27,7 +27,7 @@ class FirstBootTests(unittest.TestCase):
             root = Path(directory)
             install = root / 'install'
             install.mkdir()
-            for name in ('first-boot.sh', 'health.py'):
+            for name in ('first-boot.sh', 'health.py', 'hardware-profile.sh'):
                 shutil.copy(ROOT / 'install' / name, install / name)
             provision = install / 'provision.sh'
             provision.write_text('#!/bin/sh\nexit 0\n')
@@ -91,6 +91,7 @@ class FirstBootTests(unittest.TestCase):
             install = root / 'install'
             install.mkdir()
             shutil.copy(ROOT / 'install/first-boot.sh', install / 'first-boot.sh')
+            shutil.copy(ROOT / 'install/hardware-profile.sh', install / 'hardware-profile.sh')
             log = root / 'calls'
             provision = install / 'provision.sh'
             provision.write_text('#!/bin/sh\nprintf "provision %s\\n" "$*" >> "$HEXEN_TEST_LOG"\nexit "${HEXEN_TEST_PROVISION_STATUS:-0}"\n')
@@ -127,6 +128,42 @@ class FirstBootTests(unittest.TestCase):
             self.assertIn('walker/setup.py', log.read_text())
             self.assertNotIn('provision ', log.read_text())
             self.assertNotIn('health.py', log.read_text())
+
+    @unittest.skipUnless(Path('/etc/arch-release').exists() and os.geteuid() != 0 and shutil.which('script'), 'requires a regular Arch account and script')
+    def test_xps_first_boot_checks_hardware_before_packages_and_forwards_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            install = root / 'install'
+            install.mkdir()
+            for name in ('first-boot.sh', 'hardware-profile.sh'):
+                shutil.copy(ROOT / 'install' / name, install / name)
+            log = root / 'calls'
+            bindir = root / 'bin'
+            bindir.mkdir()
+            bodies = {
+                'sudo': 'printf "sudo %s\\n" "$*" >> "$HEXEN_TEST_LOG"',
+                'python3': 'printf "python %s\\n" "$*" >> "$HEXEN_TEST_LOG"; case "$*" in *hardware.py*) [ "${HEXEN_TEST_REJECT:-0}" = 0 ] || exit 1 ;; esac; case "$*" in *--packages*) printf "linux nvidia-open nvidia-utils vulkan-intel\\n" ;; esac',
+            }
+            for name, body in bodies.items():
+                path = bindir / name
+                path.write_text('#!/bin/sh\n' + body + '\n')
+                path.chmod(0o755)
+            provision = install / 'provision.sh'
+            provision.write_text('#!/bin/sh\nprintf "provision %s\\n" "$*" >> "$HEXEN_TEST_LOG"\n')
+            provision.chmod(0o755)
+            env = {**os.environ, 'HOME': str(root / 'home'), 'PATH': f'{bindir}:/usr/bin:/bin', 'HEXEN_TEST_LOG': str(log)}
+            command = ['script', '-q', '-e', '-c', f'bash {install / "first-boot.sh"} --hardware xps-14-9440', '/dev/null']
+            result = subprocess.run(command, input='fuzzel\ny\n', text=True, capture_output=True, env=env, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            calls = log.read_text().splitlines()
+            self.assertIn('hardware.py --profile xps-14-9440', calls[0])
+            self.assertTrue(any('sudo pacman -Syu' in line and 'nvidia-open' in line for line in calls))
+            self.assertIn('provision --hardware xps-14-9440 --launcher fuzzel', calls)
+            log.unlink()
+            result = subprocess.run(command, input='', text=True, capture_output=True, env={**env, 'HEXEN_TEST_REJECT': '1'}, timeout=10)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('sudo ', log.read_text())
+            self.assertNotIn('provision ', log.read_text())
 
     def test_fuzzel_health_does_not_require_walker(self):
         spec = importlib.util.spec_from_file_location('health', ROOT / 'install/health.py')

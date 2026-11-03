@@ -1,0 +1,55 @@
+---
+# Record successful rebuilds, not just file-change events. A failed rebuild must
+# be retried even when package/configuration tasks are unchanged on the retry.
+- name: Verify the XPS initramfs against the installed driver configuration
+  when:
+    - desktop_hardware_profile | default('generic') == 'xps-14-9440'
+    - not ansible_check_mode
+  block:
+    - name: Read installed kernel and NVIDIA package versions
+      ansible.builtin.command:
+        argv: [pacman, -Q, linux, nvidia-open, nvidia-utils]
+      register: _hardware_driver_versions
+      changed_when: false
+
+    - name: Read the installed NVIDIA module options
+      ansible.builtin.slurp:
+        src: '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d/hexen-xps-nvidia.conf'
+      register: _hardware_installed_options
+
+    - name: Inspect the last successful initramfs signature
+      ansible.builtin.stat:
+        path: '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d/hexen-xps-initramfs.signature'
+        follow: false
+      register: _hardware_initramfs_stamp
+
+    - name: Refuse unsafe initramfs signature files
+      ansible.builtin.assert:
+        that:
+          - not (_hardware_initramfs_stamp.stat.islnk | default(false))
+          - not _hardware_initramfs_stamp.stat.exists or (_hardware_initramfs_stamp.stat.isreg | default(false))
+        fail_msg: 'Hardware preflight: refusing unsafe initramfs signature file.'
+
+    - name: Read the last successful initramfs signature
+      ansible.builtin.slurp:
+        src: '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d/hexen-xps-initramfs.signature'
+      register: _hardware_initramfs_previous
+      when: _hardware_initramfs_stamp.stat.exists
+
+    - name: Compute the required initramfs signature
+      ansible.builtin.set_fact:
+        _hardware_initramfs_required: '{{ (_hardware_driver_versions.stdout ~ "\n" ~ _hardware_installed_options.content) | hash("sha256") }}'
+
+    - name: Rebuild the audited initramfs when no matching successful rebuild exists
+      ansible.builtin.command:
+        argv: [mkinitcpio, -P]
+      changed_when: true
+      when: (_hardware_initramfs_previous.content | default('') | b64decode | trim) != _hardware_initramfs_required
+
+    - name: Record only a successful matching initramfs rebuild
+      ansible.builtin.copy:
+        content: "{{ _hardware_initramfs_required }}\n"
+        dest: '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d/hexen-xps-initramfs.signature'
+        owner: '{{ _desktop_hardware_system_owner | default("root") }}'
+        group: '{{ _desktop_hardware_system_group | default("root") }}'
+        mode: '0644'

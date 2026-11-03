@@ -41,7 +41,8 @@ does not uninstall packages that an earlier profile added.
 
 Credentials and other private values must not go into the tracked profile
 files. Monitor, GPU, input, network, and other hardware settings remain outside
-this software-only layer until the target machines are inventoried. Config file
+this software-only layer. The inventoried [XPS hardware profile](xps-14-9440.md)
+is selected separately with `--hardware xps-14-9440`. Config file
 overlays remain later roadmap work.
 
 ## Inspecting changes

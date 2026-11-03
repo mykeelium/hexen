@@ -574,3 +574,6 @@
         ((_desktop_screensaver_helper.stat.islnk | default(false)) and
          _desktop_screensaver_helper.stat.lnk_source == desktop_repo_root ~ '/config/bin/hexen-screensaver')
     fail_msg: 'Desktop preflight: refusing to replace an unmanaged hexen-screensaver helper.'
+
+- name: Validate hardware paths before installing packages
+  ansible.builtin.import_tasks: hardware-paths.yml

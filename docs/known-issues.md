@@ -10,7 +10,8 @@
   partition tables/filesystems are refused, including previously installed
   test disks. It does not provide a wipe, dual-boot, or reinstall workflow.
 - UEFI x86_64 only; Secure Boot, BIOS, RAID/LVM and multi-disk layouts are outside
-  the supported preview. Physical hardware compatibility is not established.
+  the supported preview. An opt-in [XPS 14 9440 hardware profile](xps-14-9440.md)
+  is implemented; physical MST/KVM/suspend and work-app acceptance remains open.
 - The generated preview supports the US keyboard layout only. Other layouts
   need a verified mapping across console, graphical login and lock screen.
 - Walker and Elephant providers require reviewed source builds. First-boot

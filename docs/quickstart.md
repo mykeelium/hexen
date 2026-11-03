@@ -4,6 +4,10 @@ This preview is for a disposable VM. The generated installer has not yet passed
 a complete fresh-install rehearsal. Hardware compatibility and newer-kernel
 upgrade acceptance remain open. See [known issues](known-issues.md).
 
+The opt-in [XPS 14 9440 path](xps-14-9440.md) adds a verified hardware
+profile. Read its backup, graphical hardware-test and blank-disk gates before
+using it on the laptop. This is not a claim of physical acceptance.
+
 ## What you need
 
 - An x86_64 UEFI VM with Secure Boot disabled, at least 4 GiB RAM (8 GiB recommended for source builds) and a new blank

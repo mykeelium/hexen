@@ -10,6 +10,15 @@ class GeneratorTests(unittest.TestCase):
         self.g = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.g)
 
+    def test_xps_plan_includes_matched_graphics_packages(self):
+        cfg = self.g.configuration('/dev/vda', 64*2**30, 512, 'hexen', 'UTC', 'us', 'en_US', 'US', hardware='xps-14-9440')
+        self.assertIn('nvidia-open', cfg['packages'])
+        self.assertIn('nvidia-utils', cfg['packages'])
+        self.assertIn('vulkan-intel', cfg['packages'])
+        self.assertFalse(cfg['bootloader_config']['uki'])
+        with self.assertRaises(ValueError):
+            self.g.configuration('/dev/vda', 64*2**30, 512, 'hexen', 'UTC', 'us', 'en_US', 'US', hardware='unknown')
+
     def test_rejects_used_or_readonly_disk(self):
         for patch in ({'children': [{'type': 'part'}]}, {'ro': True}, {'fstype': 'btrfs'}, {'pttype': 'gpt'}, {'mountpoints': ['/mnt']}):
             disk = dict(type='disk', size=64*2**30, ro=False)

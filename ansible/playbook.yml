@@ -7,6 +7,9 @@
     hexen_machine_profile: common
     hexen_profile_local_overrides: {}
   pre_tasks:
+    - name: Audit the hardware profile before provisioning
+      ansible.builtin.import_tasks: hardware-preflight.yml
+
     - name: Validate the selected Hexen software profile
       ansible.builtin.assert:
         that:

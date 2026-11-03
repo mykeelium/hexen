@@ -14,7 +14,7 @@ class SystemMenuTest(unittest.TestCase):
             'Audio': ['pavucontrol'],
             'Bluetooth': ['ghostty', '--class=io.github.hexen.bluetui', '-e', 'bluetui'],
             'Review updates': ['ghostty', '--class=io.github.hexen.updatereview', '-e', 'hexen', 'update-monitor', 'review', '--tui'],
-            'Diagnostics': ['ghostty', '-e', 'bash', '-c', 'hexen doctor 2>&1 | less'],
+            'Diagnostics': ['ghostty', '-e', 'bash', '-c', '"$HOME/.local/bin/hexen" doctor 2>&1 | less'],
             'Getting started': ['ghostty', '-e', 'less', str(Path(__file__).resolve().parents[1] / 'docs/getting-started.txt')],
         }
         for choice, expected in cases.items():
@@ -37,7 +37,9 @@ class SystemMenuTest(unittest.TestCase):
                          'HEXEN_TEST_CHOICE': choice, 'HEXEN_TEST_LOG': str(log)}, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(log.exists(), result.stdout)
-                self.assertEqual(log.read_text().splitlines(), expected)
+                self.assertEqual(log.read_text().splitlines(), [
+                    str(home / '.local/bin/hexen') if arg == 'hexen' else arg
+                    for arg in expected])
 
     def test_edit_actions_open_local_override(self):
         helper = Path(__file__).resolve().parents[1] / 'config/bin/hexen-desktop'

@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: install/provision.sh [--vm] [--review] [--launcher walker|fuzzel] [--help]
+Usage: install/provision.sh [--vm] [--review] [--launcher walker|fuzzel] [--hardware generic|xps-14-9440] [--help]
 
 Provision this Arch Linux installation with the repository's system and desktop
 configuration. Run it as the account that should own the desktop configuration,
@@ -13,16 +13,22 @@ not as root. It does not partition disks or run Archinstall.
 collision. It still provisions the desktop, libvirt sockets, and storage pool.
 --review runs Ansible check mode with diffs, then asks separately before applying.
 --launcher selects the desktop launcher without prompting for it again.
+--hardware selects validated hardware; later runs reuse the saved selection.
 EOF
 }
 
 vm_mode=false
 review_mode=false
 desktop_launcher=''
+hardware_profile=''
 while (( $# )); do
   case "$1" in
     --vm) vm_mode=true ;;
     --review) review_mode=true ;;
+    --hardware)
+      (( $# >= 2 )) || { usage >&2; exit 2; }
+      hardware_profile=$2
+      shift ;;
     --launcher)
       (( $# >= 2 )) || { usage >&2; exit 2; }
       desktop_launcher=$2
@@ -55,6 +61,11 @@ fi
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 desktop_user="$(id -un)"
+source "$repo_root/install/hardware-profile.sh"
+resolve_hardware_profile "$hardware_profile" "$vm_mode"
+if [[ $hardware_profile != generic ]]; then
+  python3 "$repo_root/install/hardware.py" --profile "$hardware_profile" --installed
+fi
 network_summary='It starts the standard libvirt NAT network and default VM storage pool.'
 if [[ $vm_mode == true ]]; then
   network_summary='VM mode leaves libvirt networks unmanaged and configures the default VM storage pool.'
@@ -75,6 +86,7 @@ fi
 cat <<EOF
 This will provision the local Arch installation for user: ${desktop_user}
 Repository: ${repo_root}
+Hardware profile: ${hardware_profile}
 
 It audits the existing boot setup, installs declared system and desktop packages,
 enables configured services, creates root Snapper configuration, and links the
@@ -138,7 +150,7 @@ EOF
 fi
 
 export ANSIBLE_CONFIG="${repo_root}/ansible/ansible.cfg"
-extra_vars=(-e "desktop_user=${desktop_user} desktop_launcher=${desktop_launcher}")
+extra_vars=(-e "desktop_user=${desktop_user} desktop_launcher=${desktop_launcher} desktop_hardware_profile=${hardware_profile}")
 if [[ $vm_mode == true ]]; then
   extra_vars+=(-e desktop_libvirt_manage_default_network=false)
   extra_vars+=(-e '{"desktop_vulkan_driver_packages":["vulkan-virtio"]}')

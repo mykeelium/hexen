@@ -1,0 +1,51 @@
+---
+- name: Validate hardware paths before any configuration writes
+  ansible.builtin.import_tasks: hardware-paths.yml
+
+- name: Record the hardware selection for future provisioning and updates
+  ansible.builtin.copy:
+    content: "{{ desktop_hardware_profile | default('generic') }}\n"
+    dest: '{{ _desktop_home }}/.config/hexen/hardware-profile'
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0644'
+
+- name: Configure the opt-in XPS graphics stack
+  when: desktop_hardware_profile | default('generic') == 'xps-14-9440'
+  block:
+    - name: Create hardware configuration directories
+      ansible.builtin.file:
+        path: '{{ item.path }}'
+        state: directory
+        owner: '{{ item.owner }}'
+        group: '{{ item.group }}'
+        mode: '0755'
+      loop:
+        - {path: '{{ _desktop_hardware_etc | default("/etc") }}/udev/rules.d', owner: '{{ _desktop_hardware_system_owner | default("root") }}', group: '{{ _desktop_hardware_system_group | default("root") }}'}
+        - {path: '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d', owner: '{{ _desktop_hardware_system_owner | default("root") }}', group: '{{ _desktop_hardware_system_group | default("root") }}'}
+        - {path: '{{ _desktop_home }}/.config/uwsm', owner: '{{ _desktop_uid }}', group: '{{ _desktop_gid }}'}
+        - {path: '{{ _desktop_home }}/.config/uwsm/env-hyprland.d', owner: '{{ _desktop_uid }}', group: '{{ _desktop_gid }}'}
+
+    - name: Install stable Intel and NVIDIA DRM aliases
+      ansible.builtin.template:
+        src: '{{ role_path }}/templates/xps-gpu.rules.j2'
+        dest: '{{ _desktop_hardware_etc | default("/etc") }}/udev/rules.d/61-hexen-xps-gpu.rules'
+        owner: '{{ _desktop_hardware_system_owner | default("root") }}'
+        group: '{{ _desktop_hardware_system_group | default("root") }}'
+        mode: '0644'
+
+    - name: Enable NVIDIA DRM modesetting for the next boot
+      ansible.builtin.copy:
+        content: "# Managed by Hexen.\noptions nvidia_drm modeset=1 fbdev=1\n"
+        dest: '{{ _desktop_hardware_etc | default("/etc") }}/modprobe.d/hexen-xps-nvidia.conf'
+        owner: '{{ _desktop_hardware_system_owner | default("root") }}'
+        group: '{{ _desktop_hardware_system_group | default("root") }}'
+        mode: '0644'
+
+    - name: Prefer Intel in UWSM without excluding NVIDIA-connected displays
+      ansible.builtin.template:
+        src: '{{ role_path }}/templates/xps-hyprland-env.sh.j2'
+        dest: '{{ _desktop_home }}/.config/uwsm/env-hyprland.d/10-hexen-hardware.sh'
+        owner: '{{ _desktop_uid }}'
+        group: '{{ _desktop_gid }}'
+        mode: '0644'

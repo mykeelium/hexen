@@ -5,7 +5,7 @@
 - name: Install the reviewed desktop and editor dependencies
   community.general.pacman:
     name: >-
-      {{ (desktop_packages + desktop_vulkan_driver_packages +
+      {{ (desktop_packages + desktop_vulkan_driver_packages + (_desktop_hardware_packages | default([])) +
          desktop_launcher_packages[desktop_launcher] +
          (hexen_profile_packages.desktop | default([])) +
          (desktop_remote_access_packages if desktop_remote_access_enabled | bool else [])) | unique }}
@@ -246,6 +246,12 @@
   loop: "{{ query('ansible.builtin.subelements', desktop_split_config_files | dict2items, 'value') }}"
   loop_control:
     label: '{{ item.0.key }}/{{ item.1 }}'
+
+- name: Configure the selected hardware and remember it for updates
+  ansible.builtin.import_tasks: hardware.yml
+
+- name: Verify the XPS initramfs after driver and configuration installation
+  ansible.builtin.import_tasks: hardware-initramfs.yml
 
 - name: Record the selected launcher for repo-owned helpers
   ansible.builtin.copy:

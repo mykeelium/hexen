@@ -24,6 +24,11 @@ previous rehearsals are useful context, not acceptance of a new revision.
 
 ## Check source behavior
 
+The full suite requires Pillow, FontTools, Jinja2, Ansible, and the packaged
+JetBrains Mono Nerd Font. The Arch CI job installs these dependencies and runs
+as a regular account. A missing test dependency is an incomplete check, not a
+product failure or a passed skip.
+
 From the candidate checkout, run:
 
 ```sh
