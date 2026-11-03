@@ -11,8 +11,9 @@ I have personally liked how streamlined the process can be, and the ability to
 make and use little tools to help make your PC more robust. But at the same time,
 you do not have to trade off aesthetics to be able to get functionality.
 
-Hexen is launching in open beta (might be more like alpha) to hit spooooky day!
-It has been an ongoing process and more functionality and cleanup is in store!
+Hexen is a developer preview for disposable VMs. A release candidate still
+needs a complete installation, desktop, update, and recovery acceptance pass.
+Physical hardware and work-account readiness remain separate milestones.
 
 ## Try the developer preview
 

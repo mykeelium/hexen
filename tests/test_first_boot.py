@@ -4,11 +4,86 @@ import importlib.util
 import os
 import shutil
 import subprocess
+import shlex
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
 class FirstBootTests(unittest.TestCase):
+    def test_invalid_arguments_are_rejected_before_setup(self):
+        for arguments in (['--unknown'], ['--vm', '--unknown'], ['--vm', '--vm'],
+                          ['--help', '--vm'], ['--vm', '--launcher', 'fuzzel']):
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ['bash', str(ROOT / 'install/first-boot.sh'), *arguments],
+                    input='', text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn('Usage:', result.stderr)
+                self.assertNotIn('Install prerequisites', result.stdout)
+
+    def run_completion(self, *, gui_active, health_ok=True):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            install = root / 'install'
+            install.mkdir()
+            for name in ('first-boot.sh', 'health.py'):
+                shutil.copy(ROOT / 'install' / name, install / name)
+            provision = install / 'provision.sh'
+            provision.write_text('#!/bin/sh\nexit 0\n')
+            provision.chmod(0o755)
+            bindir = root / 'bin'
+            bindir.mkdir()
+            # Keep the wrapper and health report real; isolate package and service operations.
+            for name in ('sudo', 'fuzzel', 'Hyprland', 'nvim', 'firefox'):
+                command = bindir / name
+                command.write_text('#!/bin/sh\nexit 0\n')
+                command.chmod(0o755)
+            (bindir / 'python3').symlink_to(sys.executable)
+            systemctl = bindir / 'systemctl'
+            systemctl.write_text(
+                '#!/bin/sh\n'
+                'case "$*" in\n'
+                '  "is-active --quiet sddm") exit "$HEXEN_TEST_GUI_STATUS" ;;\n'
+                '  "is-active --quiet NetworkManager") exit "$HEXEN_TEST_HEALTH_STATUS" ;;\n'
+                '  "is-active --quiet firewalld"|"is-enabled --quiet sddm") exit 0 ;;\n'
+                '  *) exit 99 ;;\n'
+                'esac\n')
+            systemctl.chmod(0o755)
+            home = root / 'home'
+            launcher = home / '.config/hexen/launcher'
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text('fuzzel\n')
+            return subprocess.run(
+                ['script', '-q', '-e', '-c', f'bash {shlex.quote(str(install / "first-boot.sh"))}', '/dev/null'],
+                input='fuzzel\ny\n', text=True, capture_output=True, timeout=10,
+                env={**os.environ, 'HOME': str(home), 'PATH': f'{bindir}:/usr/bin:/bin',
+                     'HEXEN_TEST_GUI_STATUS': '0' if gui_active else '3',
+                     'HEXEN_TEST_HEALTH_STATUS': '0' if health_ok else '3'})
+
+    @unittest.skipUnless(Path('/etc/arch-release').exists() and os.geteuid() != 0 and shutil.which('script'), 'requires a regular Arch account and script')
+    def test_completed_first_boot_with_active_gui_does_not_request_reboot(self):
+        result = self.run_completion(gui_active=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Setup completed', result.stdout)
+        self.assertIn('Graphical login is active', result.stdout)
+        self.assertNotIn('reboot', result.stdout.lower())
+
+    @unittest.skipUnless(Path('/etc/arch-release').exists() and os.geteuid() != 0 and shutil.which('script'), 'requires a regular Arch account and script')
+    def test_completed_first_boot_without_gui_requests_reboot_once(self):
+        result = self.run_completion(gui_active=False)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('Setup completed', result.stdout)
+        self.assertIn('Next: reboot, unlock the disk', result.stdout)
+        self.assertEqual(result.stdout.lower().count('reboot'), 1)
+
+    @unittest.skipUnless(Path('/etc/arch-release').exists() and os.geteuid() != 0 and shutil.which('script'), 'requires a regular Arch account and script')
+    def test_failed_health_check_never_reports_setup_complete(self):
+        result = self.run_completion(gui_active=True, health_ok=False)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('NetworkManager inactive', result.stdout)
+        self.assertNotIn('Setup completed', result.stdout)
+
     @unittest.skipUnless(Path('/etc/arch-release').exists() and os.geteuid() != 0 and shutil.which('script'), 'requires a regular Arch account and script')
     def test_fuzzel_first_boot_skips_walker_and_forwards_choice(self):
         with tempfile.TemporaryDirectory() as directory:

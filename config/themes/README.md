@@ -51,3 +51,35 @@ configs read through the stable
 failed render leaves the previously selected theme active. Neovim's colorscheme
 remains independently selectable. Theme changes reload the running Ghostty
 user service when it is available, alongside the other desktop refreshes.
+
+## Keeping the selected theme current
+
+Provisioning runs `hexen-theme sync` to regenerate the selected pack from the
+current templates, palette or wallpaper and installed Matugen renderer. It
+compares generated app fragments and the referenced wallpaper's SHA-256 with
+the active generation. Different output or wallpaper content activates a new
+generation; identical inputs to the desktop keep the existing generation and
+does not reload desktop processes. The previous generated directory is retained.
+There is no input cache to invalidate when templates or renderer versions change.
+Generations made before wallpaper digests were recorded are regenerated once
+to establish that metadata; the next unchanged synchronization is a no-op.
+
+The selected pack is preserved. Tokyo Night is used only when no theme has been
+selected. A missing or invalid selected pack stops synchronization instead of
+silently selecting a different theme. Fix the pack or explicitly apply another
+one, then rerun provisioning. Render failure leaves the active generation intact.
+
+Use `hexen-theme sync --check` to preview whether regeneration would change the
+output. Both commands print JSON containing `changed` and `slug`. Preview uses
+temporary rendering files but does not create persistent theme state, change
+links or reload desktop processes. Matugen and rendering dependencies must be
+installed for a rendered preview. Ansible check mode uses this preview when
+Matugen is available. When it is not installed yet, Ansible explicitly reports
+pending regeneration without claiming to have rendered or validated its output.
+
+When run inside a Hyprland session with `HYPRLAND_INSTANCE_SIGNATURE` available,
+changed output uses the existing wallpaper and desktop refresh path. Headless
+provisioning updates persistent generated files without attaching to a graphical
+session; they are used on the next session or app reload. To apply them through
+the live refresh path, run `hexen-theme apply <selected-slug>` from that desktop.
+An atomic file-generation switch does not make every application's reload atomic.

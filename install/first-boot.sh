@@ -3,10 +3,14 @@
 set -Eeuo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 trap 'printf "\nSetup stopped. Read the error above, correct it, then rerun this command. Your terminal remains open.\n" >&2' ERR
+usage() {
+  printf 'Usage: ./install/first-boot.sh [--vm]\nRun from a permanent checkout as your regular Arch account.\n'
+}
+(( $# <= 1 )) || { usage >&2; exit 2; }
 case "${1:-}" in
-  --help|-h) printf 'Usage: ./install/first-boot.sh [--vm]\nRun from a permanent checkout as your regular Arch account.\n'; exit 0 ;;
+  --help|-h) usage; exit 0 ;;
   --vm|'') ;;
-  *) printf 'Expected --vm or no argument.\n' >&2; exit 2 ;;
+  *) usage >&2; exit 2 ;;
 esac
 [[ $EUID != 0 && -f /etc/arch-release && -t 0 ]] || { printf 'Run as your regular user in an interactive terminal on installed Arch.\n' >&2; exit 1; }
 [[ ! -d /run/archiso ]] || { printf 'Reboot into the installed system first.\n' >&2; exit 1; }
@@ -56,4 +60,4 @@ else
   exit "$status"
 fi
 python3 "$root/install/health.py"
-printf '\nSetup completed. Reboot when ready, unlock the disk, then sign in through the Hexen graphical login.\n'
+printf '\nSetup completed.\n'

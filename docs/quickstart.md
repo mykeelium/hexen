@@ -24,20 +24,40 @@ Boot the VM from that ISO in UEFI mode. Connect networking before continuing;
 for Wi-Fi use `iwctl` from the live shell. Check `ip address` and
 `curl -I https://archlinux.org` if the connection fails.
 
-From the live ISO's root shell:
+No accepted release revision has been published in these instructions yet.
+For a maintainer rehearsal, use a full 40-character commit from a reviewed,
+clean source checkpoint available on `main`. Record it outside the VM and use
+that same commit after reboot. Uncommitted changes are not included in a source
+download. A selected commit becomes accepted only after its checks pass.
+
+The commands below use Bash prompt syntax. From the live ISO's root shell,
+start Bash first (the ISO normally opens Zsh):
 
 ```sh
-curl -fL --retry 3 -o /tmp/hexen-source.tar.gz https://github.com/mykeelium/hexen/archive/refs/heads/main.tar.gz
-bsdtar -xf /tmp/hexen-source.tar.gz
-cd hexen-main
-./install/archinstall/hexen-install.sh
+bash
 ```
 
-Git is not required in the live ISO. This archive URL must be publicly accessible
-before release; the configured repository is currently private. Until a tested release tag is published, this downloads
-development source. Do not
-assume every commit has installation acceptance. Once a release exists, download
-the archive for the exact release tag named in its notes before running setup.
+Then enter the candidate commit when prompted:
+
+```sh
+read -r -p 'Full candidate commit: ' HEXEN_REVISION
+if [[ $HEXEN_REVISION =~ ^[0-9a-f]{40}$ ]]; then
+  curl -fL --retry 3 -o /tmp/hexen-source.tar.gz \
+    "https://github.com/mykeelium/hexen/archive/$HEXEN_REVISION.tar.gz" &&
+    bsdtar -xf /tmp/hexen-source.tar.gz &&
+    cd "hexen-$HEXEN_REVISION" &&
+    ./install/archinstall/hexen-install.sh
+else
+  printf 'Stop: enter the full 40-character lowercase candidate commit.\n' >&2
+fi
+```
+
+Git is not required in the live ISO. The repository and a commit-specific archive
+were anonymously accessible on 2026-11-02; the final rehearsal commit still needs
+the same check. See the [preflight record](rehearsal-preflight-2026-11-02.md).
+Stop if downloading, extracting or previewing fails. Once a
+release exists, use the full commit named in its notes. A commit ID selects
+source; it does not establish installation acceptance or verify a signature.
 
 The command previews the plan. It never chooses a disk for you. For a fresh
 blank VM disk, launch installation with:
@@ -72,17 +92,32 @@ connects automatically. If Wi-Fi needs reconnecting, run `nmtui`, choose
 
 Verify encrypted Btrfs boot using [the boot checks](../install/archinstall/README.md#verify-after-first-boot).
 Then clone the repository again onto the installed disk; the live ISO checkout
-was temporary:
+was temporary. Run these commands in Bash as your regular user; if your account
+uses another shell, enter `bash` first:
 
 ```sh
-git clone https://github.com/mykeelium/hexen.git "$HOME/hexen"
-cd "$HOME/hexen"
-./install/first-boot.sh --vm
+read -r -p 'Same full candidate commit used on the live ISO: ' HEXEN_REVISION
+if [[ $HEXEN_REVISION =~ ^[0-9a-f]{40}$ ]]; then
+  git clone --no-checkout --branch main https://github.com/mykeelium/hexen.git "$HOME/hexen" &&
+    cd "$HOME/hexen" &&
+    git merge-base --is-ancestor "$HEXEN_REVISION" origin/main &&
+    git switch --create hexen "$HEXEN_REVISION" &&
+    git branch --set-upstream-to=origin/main hexen &&
+    test "$(git rev-parse HEAD)" = "$HEXEN_REVISION" &&
+    ./install/first-boot.sh --vm
+else
+  printf 'Stop: enter the same full 40-character lowercase candidate commit.\n' >&2
+fi
 ```
 
-Use the same tested release revision in both stages. Release notes must give
-the exact branch/checkout commands: a detached tag checkout skips reviewed
-source updates, so the installed checkout needs a local branch with an upstream.
+The commands stop before setup if cloning or revision selection fails. They
+create a local `hexen` branch at the chosen commit with `origin/main` as its
+upstream. They do not pull newer source during setup. Later, the update workflow
+can show incoming changes and ask before a fast-forward. A detached checkout
+would skip that source-update stage. If `$HOME/hexen` already exists or a command
+fails, inspect it before continuing; do not delete or reset an existing checkout
+to retry these fresh-install commands. Follow the printed first-boot retry
+instructions once the correct checkout is in place.
 The `--vm` command must run inside the target VM; it refuses a detected physical
 host. Keep this checkout in place; desktop configuration links point into it.
 
@@ -99,8 +134,10 @@ Official package transactions and each third-party build/install require review.
 
 ## 3. Sign into Hexen
 
-After setup succeeds, reboot, unlock the disk, and sign in at the graphical
-login (SDDM). On the first sign-in, select **Hyprland (UWSM-managed)**
+After initial setup succeeds, follow the health report's instruction to reboot,
+unlock the disk, and sign in at the graphical login (SDDM). When graphical login
+is already active, the report instead asks you to check the launcher and browser
+shortcuts. On the first sign-in, select **Hyprland (UWSM-managed)**
 in the session selector. Open the selected launcher with Super+Space. Super+Shift+B opens Zen if installed,
 otherwise Firefox. See [desktop shortcuts](desktop.md).
 

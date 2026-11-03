@@ -489,22 +489,8 @@
     follow: false
   when: desktop_remote_access_enabled | bool
 
-- name: Inspect active theme state
-  ansible.builtin.stat:
-    path: '{{ desktop_xdg_state_home | regex_replace("/+$", "") }}/hexen/themes/current'
-    follow: false
-  register: _desktop_active_theme
-
-- name: Initialize Tokyo Night when no theme has been selected
-  become: true
-  become_user: '{{ desktop_user }}'
-  ansible.builtin.command:
-    argv: ['{{ _desktop_home }}/.local/bin/hexen-theme', apply, tokyo-night]
-  environment:
-    HOME: '{{ _desktop_home }}'
-    XDG_STATE_HOME: '{{ desktop_xdg_state_home }}'
-  when: not (_desktop_active_theme.stat.islnk | default(false))
-  changed_when: true
+- name: Synchronize generated output for the selected theme
+  ansible.builtin.import_tasks: theme.yml
 
 - name: Validate configuration without requiring an active graphical login
   become: true

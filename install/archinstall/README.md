@@ -15,14 +15,12 @@ with this generator is still pending; use a new disposable VM disk for rehearsal
 Existing partitions, partition tables, filesystems, mounted devices, read-only
 devices, and disks smaller than 40 GiB are refused.
 
-From the live ISO, connect to the internet, download this repository archive (the live ISO need not have Git), and run:
-
-```sh
-curl -fL --retry 3 -o /tmp/hexen-source.tar.gz https://github.com/mykeelium/hexen/archive/refs/heads/main.tar.gz
-bsdtar -xf /tmp/hexen-source.tar.gz
-cd hexen-main
-./install/archinstall/hexen-install.sh
-```
+From the live ISO, connect to the internet and follow the
+[quickstart download commands](../../docs/quickstart.md#1-start-from-the-live-iso).
+They ask for a full candidate commit and download that exact archive; the live
+ISO need not have Git. Record the commit outside the VM so you can select the
+same source after reboot. No accepted release revision is named yet; maintainer
+rehearsals require a reviewed, committed checkpoint available on `main`.
 
 This previews the plan without partitioning. It asks for a disk, hostname,
 username, timezone, locale, and mirror country code. The preview uses a US
@@ -45,8 +43,11 @@ configuration immediately before Archinstall performs disk operations.
 The temporary non-secret config is removed on exit. Archinstall can retain its
 own non-secret configuration and logs. An aborted menu is not reported as a
 successful installation. No reboot or post-install provisioning is automatic.
-Follow the boot checks below, then run `./install/first-boot.sh --vm` as the new
-regular account in the VM. It installs prerequisites, guides Walker setup, and
+Follow the boot checks below, then use the
+[installed-system checkout commands](../../docs/quickstart.md#2-boot-the-installed-system)
+to obtain the same candidate on a local branch with an upstream and run
+`./install/first-boot.sh --vm` as the new regular account in the VM.
+It installs prerequisites, guides Walker setup, and
 runs provisioning. The generated base config
 installs Git and Ansible; it does not configure SSH or remote access.
 
@@ -82,7 +83,9 @@ If the system does not request a LUKS passphrase, the header is not LUKS2, or th
 
 ## Provision the installed system
 
-Clone this repository to a stable location on the installed system, then run
+For a new generated installation, use the quickstart's first-boot procedure
+above. For an existing installation where prerequisites are already prepared,
+keep the reviewed repository checkout in a stable location, then run
 `install/provision.sh` as the regular account that should own the desktop. The
 script installs the declared system and desktop configuration through Ansible;
 it does not run Archinstall or change the disk layout. Review the summary before

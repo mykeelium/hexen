@@ -26,9 +26,10 @@
 - A real newer-kernel upgrade/reboot remains unverified. Root snapshots and
   matching ESP recovery were rehearsed previously, but are not an independent
   backup of home data, credentials or VM disks.
-- The configured GitHub repository is currently private. Public source/archive
-  downloads cannot be accepted until publication is explicitly approved and a
-  tested release revision exists.
+- The repository is public, and an anonymous commit-specific archive download
+  passed on 2026-11-02. The final rehearsal commit has not been frozen; current
+  uncommitted changes are absent from GitHub downloads. See the
+  [preflight record](rehearsal-preflight-2026-11-02.md).
 - Configuration links depend on the checkout remaining at its installation
   path. Moving or deleting it can break the desktop.
 
