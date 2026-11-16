@@ -16,6 +16,13 @@ and reload again to undo it. The shared binding and theme files remain available
 as references; editing them changes tracked project files and can prevent the
 Hexen update workflow until those changes are resolved.
 
+The shared defaults wake displays on keyboard input and load `lid-display.lua`
+to enable/disable the `eDP-1` laptop panel with lid events, including while locked.
+Initial lid state is read from `/proc/acpi/button/lid/LID0/state` when available.
+The session also starts `/usr/bin/drata-agent` when that executable is installed.
+If migrating these settings from `local.lua`, remove the old lid-display load and
+Drata startup callback there to avoid registering or starting them twice.
+
 ## Provision and start
 
 Open the Hexen menu with **Super+Alt+Space** or the leftmost Waybar icon.
