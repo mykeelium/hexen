@@ -410,3 +410,21 @@ and press Enter to unlock; an unsuccessful attempt displays an unlock-failure
 message. The wordmark uses the custom HEX3N glyph font. Colors follow the active
 Hexen theme. This is a visual update only: PAM authentication and the
 idle/suspend locking policy remain unchanged.
+
+## Bash shortcuts
+
+Desktop provisioning loads `config/bash/git.bash` and `config/bash/firejail.bash`
+through a managed block in `~/.bashrc`. Open a new interactive Bash session after
+provisioning to use them.
+
+- `g` forwards to `git`; `git ..` switches to the previous branch.
+- `git rbmain` updates the main branch and rebases the current branch onto it.
+  Set `git config uconfig.mainbranch <branch>` to override `main`.
+- `sub-check` checks the `bhce` submodule and continues the parent rebase when clean.
+- `fj` or `fj codex` launches Codex; `fj opencode` (also `fj opencodeai`) launches
+  OpenCode. Additional arguments are forwarded, and unrecognized first arguments
+  are passed to Codex.
+
+Firejail is installed by the desktop role. The launchers require your separate
+`jhop-heap` checkout at `/home/mcuomo/source/repos/jhop-heap`, providing
+`scripts/codex.sh` and `scripts/opencodeai.sh`. Hexen does not download that checkout.
