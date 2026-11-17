@@ -7,7 +7,7 @@ desktop_remote_access_packages:
   - openssh
   - wayvnc
 desktop_xdg_state_home: '{{ _desktop_home }}/.local/state'
-desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker, elephant, swappy, starship.toml]
+desktop_config_dirs: [hypr, ghostty, mako, xdg-desktop-portal, nvim, lazydocker, elephant, swappy, bash, starship.toml]
 desktop_launcher_config_dirs:
   fuzzel: fuzzel
   walker: ''
@@ -44,6 +44,7 @@ desktop_walker_provider_files:
 desktop_vulkan_driver_packages: []
 
 desktop_packages:
+  - firejail
   - pacman-contrib
   - sddm
   - hyprland

@@ -311,6 +311,20 @@
         DOCKER_HOST="unix://${runtime_dir}/podman/podman.sock" command lazydocker "$@"
       }
 
+- name: Load Git and agent sandbox shortcuts for interactive Bash sessions
+  ansible.builtin.blockinfile:
+    path: '{{ _desktop_home }}/.bashrc'
+    create: true
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    mode: '0644'
+    marker: '# {mark} HEXEN BASH SHORTCUTS'
+    block: |
+      if [[ $- == *i* ]]; then
+        source "$HOME/.config/bash/git.bash"
+        source "$HOME/.config/bash/firejail.bash"
+      fi
+
 - name: Initialize Starship for interactive Bash sessions
   ansible.builtin.blockinfile:
     path: '{{ _desktop_home }}/.bashrc'
