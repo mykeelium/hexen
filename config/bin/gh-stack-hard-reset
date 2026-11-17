@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Replace the current local gh-stack with its GitHub state. Never pushes.
+set -euo pipefail
+
+usage() {
+    echo 'Usage: gh-stack-hard-reset [--dry-run]'
+    echo 'Discard local-only stack commits and reload the current stack from GitHub.'
+    echo 'Requires a clean working tree; refuses unfinished operations and other worktree owners.'
+}
+fail() { echo "gh-stack-hard-reset: $*" >&2; exit 1; }
+dry_run=false
+case "${1:-}" in
+    --help|-h) usage; exit 0 ;;
+    --dry-run) dry_run=true ;;
+    '') ;;
+    *) usage >&2; exit 1 ;;
+esac
+(( $# <= 1 )) || fail 'Too many arguments.'
+for dependency in git gh jq; do
+    command -v "$dependency" >/dev/null || fail "Missing command: $dependency"
+done
+cd "$(git rev-parse --show-toplevel)"
+current_branch=$(git symbolic-ref --quiet --short HEAD) || fail 'Check out a stack branch first.'
+common_dir=$(git rev-parse --git-common-dir)
+for operation in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD sequencer; do
+    [[ ! -e "$(git rev-parse --git-path "$operation")" ]] || fail "Finish or abort $operation first."
+done
+for journal in gh-stack-rebase-state gh-stack-modify-state; do
+    [[ ! -e "$common_dir/$journal" ]] || fail "Finish or abort the pending gh-stack operation ($journal) first."
+done
+[[ -z "$(git status --porcelain --untracked-files=all --ignore-submodules=all)" ]] || fail 'Commit or stash working-tree changes first.'
+git submodule foreach --quiet --recursive 'test -z "$(git status --porcelain --untracked-files=all)"' || fail 'Commit or stash changes inside submodules first.'
+
+# gh-stack view does not expose the stack number; read its local catalog.
+stack_number=$(jq -er --arg branch "$current_branch" '
+    [.stacks[] | select(any(.branches[]; .branch == $branch))] |
+    if length == 1 then .[0].number // empty else empty end
+' "$common_dir/gh-stack") || fail 'Cannot identify one published stack for the current branch.'
+[[ "$stack_number" =~ ^[0-9]+$ ]] || fail 'Invalid stack number.'
+local_view=$(gh stack view --json)
+pr_url=$(jq -er '[.branches[] | .pr.url // empty][0] // empty' <<< "$local_view")
+[[ "$pr_url" =~ ^https://github.com/([^/]+/[^/]+)/pull/[0-9]+$ ]] || fail 'Cannot determine the GitHub repository.'
+repository=${BASH_REMATCH[1]}
+remote=$(git config --get remote.pushDefault || true)
+if [[ -z "$remote" ]]; then
+    mapfile -t remotes < <(git remote)
+    (( ${#remotes[@]} == 1 )) || fail 'Set remote.pushDefault when using multiple remotes.'
+    remote=${remotes[0]}
+fi
+# Verify the selected remote actually belongs to this repository.
+remote_url=$(git remote get-url "$remote")
+case "$remote_url" in
+    "https://github.com/$repository"|"https://github.com/$repository.git"|"git@github.com:$repository"|"git@github.com:$repository.git"|"ssh://git@github.com/$repository"|"ssh://git@github.com/$repository.git") ;;
+    *) fail "Remote $remote does not match github.com/$repository." ;;
+esac
+remote_stack=$(gh api "repos/$repository/stacks/$stack_number")
+branches_text=$(jq -er '[.pull_requests[] | select(.merged_at == null) | .head.ref] | if length > 0 then .[] else empty end' <<< "$remote_stack") || fail 'Remote stack has no unmerged branches.'
+mapfile -t branches <<< "$branches_text"
+for branch in "${branches[@]}"; do
+    git check-ref-format "refs/heads/$branch" >/dev/null || fail "Invalid branch: $branch"
+done
+# Refuse branches checked out in another worktree before moving any refs.
+worktree_branches=$(git worktree list --porcelain | sed -n 's/^branch refs\/heads\///p')
+local_branches=$(jq -r '.branches[].name' <<< "$local_view")
+while IFS= read -r branch; do
+    [[ "$branch" == "$current_branch" ]] && continue
+    if printf '%s\n%s\n' "$branches_text" "$local_branches" | grep -Fxq -- "$branch"; then
+        fail "Stack branch $branch is checked out in another worktree."
+    fi
+done <<< "$worktree_branches"
+echo "Stack #$stack_number: replace these local branches with $remote:"
+printf '  %s\n' "${branches[@]}"
+if $dry_run; then
+    echo 'Dry run: no branches, stack tracking, or submodules changed.'
+    exit 0
+fi
+
+# Fetch explicit refs so the reset also works with narrow fetch configurations.
+refspecs=()
+for branch in "${branches[@]}"; do
+    refspecs+=("+refs/heads/$branch:refs/remotes/$remote/$branch")
+done
+git fetch --atomic "$remote" "${refspecs[@]}"
+updates='start'
+for branch in "${branches[@]}"; do
+    new_head=$(git rev-parse --verify "refs/remotes/$remote/$branch^{commit}")
+    if old_head=$(git rev-parse --verify "refs/heads/$branch" 2>/dev/null); then
+        updates+=$'\n'"update refs/heads/$branch $new_head $old_head"
+    else
+        updates+=$'\n'"create refs/heads/$branch $new_head"
+    fi
+done
+updates+=$'\nprepare\ncommit'
+# Save metadata for recovery if GitHub becomes unavailable during reimport.
+backup_dir=$(mktemp -d "${TMPDIR:-/tmp}/gh-stack-hard-reset.XXXXXXXX")
+cp "$common_dir/gh-stack" "$backup_dir/catalog.json"
+printf '%s\n' "$local_view" > "$backup_dir/local-stack.json"
+echo "Previous stack metadata: $backup_dir"
+git switch --detach
+printf '%s\n' "$updates" | git update-ref -m 'gh-stack-hard-reset: match remote stack' --stdin
+return_branch=${branches[0]}
+for branch in "${branches[@]}"; do
+    [[ "$branch" != "$current_branch" ]] || return_branch=$current_branch
+done
+git switch "$return_branch"
+git submodule update --init --recursive --checkout
+gh stack unstack "$stack_number" --local
+gh stack checkout "$stack_number"
+# checkout may select another branch; restore the caller's branch when still present.
+git switch "$return_branch"
+git submodule update --init --recursive --checkout
+for branch in "${branches[@]}"; do
+    [[ "$(git rev-parse "refs/heads/$branch")" == "$(git rev-parse "refs/remotes/$remote/$branch")" ]] || fail "Verification failed for $branch."
+done
+echo "Stack #$stack_number now matches $remote. No changes pushed."

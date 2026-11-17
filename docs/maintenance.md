@@ -200,3 +200,37 @@ and hardware; inspect with `powerprofilesctl list` and select with
 `powerprofilesctl set PROFILE`. Validate thermals, battery behavior, and
 suspend/resume on the physical laptop. Do not enable another power-management
 service until its ownership is reconciled with this daemon.
+
+## Maintained workstation commands
+
+Desktop provisioning installs repository-backed commands in `~/.local/bin`.
+Existing installations receive them when `hexen update` completes desktop
+Ansible convergence. Conflicting regular files are preserved; reconcile them
+before rerunning provisioning. No recovery command is executed by provisioning.
+
+- `aur-walk` reviews and builds local package recipes. Run the normal system
+  update first. Its default package directory is `~/builds`; use `--root PATH`
+  or set `root = "/path/to/builds"` in `~/.config/aur-walk/config.toml`.
+  Existing configuration is retained. `--list` inventories recipes without
+  fetching or building. Requires Python, Git, base-devel, pacman and sudo.
+  Fetch with **f**, review with **r**, approve build with **b**, or walk pending
+  recipes with **w**. Installation asks separately. Recipe review does not
+  review downloaded upstream source; AUR dependencies require separate handling.
+  Optional local updaters belong in `[local_updates]` as explicit argv arrays;
+  no machine-specific updater is enabled by default.
+- `gh-stack-hard-reset --dry-run` previews replacing the local published stack
+  from GitHub. Running without that flag discards local-only stack commits.
+  Requires Git, GitHub CLI, jq, and the `gh stack` extension. It refuses dirty
+  worktrees and unfinished operations and does not push.
+- `repair-hexen-update` previews repair of the specific HyprMon include that can
+  leave tracked desktop configuration dirty and block updates. Add `--apply`
+  after reviewing the preview. The command finds its source repository through
+  its symlink; `--repo PATH` selects another checkout. It retains generated
+  monitor settings, moves the include into local configuration, and archives
+  backups under `~/recovery/hexen-config-repair`. Unrelated tracked edits cause
+  refusal. This does not fix arbitrary update errors or reload the desktop.
+
+The update-monitor service retries failed discovery after five minutes, with
+at most three starts per two-hour window. The daily timer remains unchanged;
+retrying discovery does not install packages. Desktop convergence reloads the
+user systemd manager when its session bus is available.
