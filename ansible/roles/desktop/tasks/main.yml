@@ -464,6 +464,20 @@
     force: false
     follow: false
 
+- name: Link maintained workstation tools
+  ansible.builtin.file:
+    src: '{{ desktop_repo_root }}/config/bin/{{ item }}'
+    dest: '{{ _desktop_home }}/.local/bin/{{ item }}'
+    state: link
+    owner: '{{ _desktop_uid }}'
+    group: '{{ _desktop_gid }}'
+    force: false
+    follow: false
+  loop:
+    - aur-walk
+    - gh-stack-hard-reset
+    - repair-hexen-update
+
 - name: Link the theme helper
   ansible.builtin.file:
     src: '{{ desktop_repo_root }}/config/bin/hexen-theme'

@@ -1,0 +1,382 @@
+#!/usr/bin/env python3
+"""Review-first updater for a directory of Arch package recipes (Python 3.11+)."""
+import argparse
+import contextlib
+import curses
+import difflib
+import fcntl
+import hashlib
+import getpass
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
+import tomllib
+
+
+class Error(Exception):
+    pass
+
+
+def run(argv, cwd, *, check=True):
+    result = subprocess.run(argv, cwd=cwd, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, errors='replace', env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'})
+    if check and result.returncode:
+        raise Error(f'{shlex.join(argv)}\n{result.stderr.strip() or result.stdout.strip()}')
+    return result
+
+
+def git(path, *args, check=True):
+    return run(['git', '-c', 'core.quotePath=true', '--no-pager', *args], path, check=check)
+
+
+def safe(text):
+    # Repository text must not inject terminal escape sequences.
+    return ''.join(c if c in '\n\t' or c.isprintable() else f'\\x{ord(c):02x}' for c in text)
+
+
+def local_files(path):
+    """Only recipe inputs, excluding generated sources, packages and logs."""
+    names = {'PKGBUILD', '.SRCINFO'}
+    names.update(p.name for p in path.iterdir()
+                 if p.is_file() and (p.suffix in {'.install', '.patch', '.diff', '.sh', '.py', '.service', '.desktop'}))
+    return {n: (path / n).read_text(errors='replace') for n in sorted(names) if (path / n).is_file()}
+
+
+def fingerprint(files):
+    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+
+
+class Package:
+    def __init__(self, path, saved=None):
+        self.path, self.name = path, path.name
+        self.saved = saved or {}
+        self.target = None
+        self.fetched = False
+        self.note = ''
+        self.local_before = None
+        self.is_git = (path / '.git').exists()
+        self.refresh()
+
+    def refresh(self):
+        if not self.is_git:
+            self.head = None
+            self.status = 'local recipe'
+            return
+        self.head = git(self.path, 'rev-parse', 'HEAD').stdout.strip()
+        if git(self.path, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
+            self.status = 'local edits — resolve before building'
+            return
+        if not self.fetched:
+            self.status = 'not fetched'
+        elif self.target != self.head:
+            self.status = 'update available'
+        elif self.saved.get('installed') != self.head:
+            self.status = 'review / install available'
+        else:
+            self.status = 'current (rebuild available)'
+
+    def clean(self):
+        if git(self.path, 'status', '--porcelain', '--untracked-files=no').stdout.strip():
+            raise Error('Tracked files have local changes. Review them and commit or resolve them yourself.')
+
+    def fetch(self):
+        if not self.is_git:
+            self.note = 'Local recipe: use u for a configured updater, r to review.'
+            return
+        self.fetched = False
+        self.target = None
+        # Use configured upstream, including non-origin remotes and non-master branches.
+        remote = git(self.path, 'config', '--get', 'branch.' + git(self.path, 'symbolic-ref', '--short', 'HEAD').stdout.strip() + '.remote').stdout.strip()
+        if not remote or remote == '.':
+            raise Error('A remote tracking branch is required.')
+        git(self.path, 'fetch', '--no-tags', '--', remote)
+        self.target = git(self.path, 'rev-parse', '--verify', '@{upstream}^{commit}').stdout.strip()
+        self.fetched = True
+        self.refresh()
+
+    def review(self):
+        self.refresh()
+        if not self.is_git:
+            files = local_files(self.path)
+            before = self.local_before or self.saved.get('files', {})
+            delta = ''.join(''.join(difflib.unified_diff(before.get(n, '').splitlines(True), files.get(n, '').splitlines(True), fromfile='previous/' + n, tofile='candidate/' + n))
+                            for n in sorted(before.keys() | files.keys()))
+            full = '\n'.join(f'\n--- {n} ---\n{data}' for n, data in files.items())
+            return fingerprint(files), f'{self.name} — local recipe\n\n{delta}\nFULL RECIPE INPUTS\n{full}'
+        target = self.target if self.fetched else self.head
+        baseline = self.saved.get('installed', self.head)
+        if git(self.path, 'cat-file', '-e', baseline + '^{commit}', check=False).returncode:
+            baseline = self.head
+        log = git(self.path, 'log', '--format=%h %s', f'{baseline}..{target}').stdout
+        diff = git(self.path, 'diff', '--no-ext-diff', '--no-textconv', '--no-renames', baseline, target, '--').stdout
+        dirty = git(self.path, 'diff', 'HEAD', '--no-ext-diff', '--no-textconv', '--').stdout
+        names = git(self.path, 'ls-tree', '-rz', '--name-only', target).stdout.split('\0')
+        full = []
+        for name in filter(None, names):
+            data = git(self.path, 'show', f'{target}:{name}').stdout
+            full.append(f'\n--- {name} ---\n{data}')
+        return target, (f'{self.name}\nCandidate: {target}\nCompared with: {baseline}\n'
+                        f'Fetched this session: {self.fetched}\n\nCOMMITS\n{log or "(none)"}\n'
+                        f'RECIPE DIFF\n{diff or "(no committed changes)"}\nLOCAL EDITS\n{dirty or "(none)"}\n'
+                        f'FULL CANDIDATE FILES\n{"".join(full)}')
+
+    def prepare(self, approved):
+        if not self.is_git:
+            if fingerprint(local_files(self.path)) != approved:
+                raise Error('Recipe changed since review. Review again.')
+            return
+        self.clean()
+        current = git(self.path, 'rev-parse', 'HEAD').stdout.strip()
+        if current != self.head or approved != (self.target if self.fetched else self.head):
+            raise Error('Checkout changed since review. Fetch and review again.')
+        if git(self.path, 'merge-base', '--is-ancestor', current, approved, check=False).returncode:
+            raise Error('History diverged. Resolve it manually; no reset or rebase was performed.')
+        # Exact reviewed object, never a moving remote ref. Git protects untracked collisions.
+        git(self.path, '-c', 'core.hooksPath=/dev/null', 'merge', '--ff-only', '--no-edit', approved)
+        self.head = approved
+        self.clean()
+
+
+class Store:
+    def __init__(self, path):
+        self.path = path
+        try:
+            self.data = json.loads(path.read_text())
+        except FileNotFoundError:
+            self.data = {}
+        except (ValueError, OSError) as exc:
+            raise Error(f'Cannot read {path}: {exc}') from exc
+
+    def save(self, package, approved):
+        key = str(package.path)
+        self.data[key] = ({'installed': approved} if package.is_git else
+                          {'installed': approved, 'files': local_files(package.path)})
+        fd, temp = tempfile.mkstemp(dir=self.path.parent)
+        try:
+            with os.fdopen(fd, 'w') as output:
+                json.dump(self.data, output, indent=2)
+                output.write('\n')
+            os.replace(temp, self.path)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+        package.saved = self.data[key]
+        package.refresh()
+
+
+@contextlib.contextmanager
+def terminal(screen):
+    curses.def_prog_mode()
+    curses.endwin()
+    try:
+        yield
+    finally:
+        curses.reset_prog_mode()
+        screen.refresh()
+        screen.clear()
+
+
+def build_install(package, approved, store):
+    package.prepare(approved)
+    print(f'\nBuilding {package.name} as {getpass.getuser()}.')
+    print('makepkg --syncdeps --cleanbuild --force --log')
+    print('Missing dependencies may prompt for sudo. Existing build output is rebuilt.\n')
+    result = subprocess.run(['makepkg', '--syncdeps', '--cleanbuild', '--force', '--log'], cwd=package.path)
+    if result.returncode:
+        raise Error(f'Build failed ({result.returncode}); nothing was marked installed.')
+    # PKGDEST and split packages are resolved by makepkg, after approval only.
+    paths = run(['makepkg', '--packagelist'], package.path).stdout.splitlines()
+    artifacts = [(package.path / p).resolve() for p in paths if p.strip()]
+    if not artifacts or any(not p.is_file() for p in artifacts):
+        raise Error('Expected package artifacts are missing; refusing installation.')
+    print('\nBuilt packages (including split/debug packages):')
+    for artifact in artifacts:
+        print('  ' + str(artifact))
+    if input('\nInstall these packages with sudo pacman -U? [y/N] ').strip().lower() != 'y':
+        return 'Built; installation skipped (will remain pending).'
+    result = subprocess.run(['sudo', 'pacman', '-U', '--', *map(str, artifacts)], cwd=package.path)
+    if result.returncode:
+        raise Error(f'Installation failed ({result.returncode}); nothing was marked installed.')
+    store.save(package, approved)
+    return 'Installed successfully.'
+
+
+def draw(screen, lines, footer):
+    screen.erase()
+    height, width = screen.getmaxyx()
+    for y, line in enumerate(lines[:max(0, height - 2)]):
+        try:
+            screen.addnstr(y, 0, safe(line).expandtabs(4), max(0, width - 1))
+        except curses.error:
+            pass
+    try:
+        screen.addnstr(max(0, height - 1), 0, footer, max(0, width - 1), curses.A_REVERSE)
+    except curses.error:
+        pass
+    screen.refresh()
+
+
+def viewer(screen, title, content, approve=False, approval_label='b approve recipe & build'):
+    offset = 0
+    while True:
+        h, w = screen.getmaxyx()
+        lines = [chunk for line in safe(content).expandtabs(4).splitlines()
+                 for chunk in (textwrap.wrap(line, max(10, w - 2), replace_whitespace=False, drop_whitespace=False) or [''])]
+        page = max(1, h - 4)
+        offset = min(offset, max(0, len(lines) - page))
+        draw(screen, [title, f'Lines {offset + 1}–{min(offset + page, len(lines))} / {len(lines)}', *lines[offset:offset + page]],
+             '↑↓/jk scroll  PgUp/PgDn  Home/End  q back' + ('  ' + approval_label if approve else ''))
+        key = screen.getch()
+        if key in (ord('q'), 27):
+            return False
+        if key == ord('b') and approve:
+            return True
+        if key in (curses.KEY_DOWN, ord('j')):
+            offset += 1
+        elif key in (curses.KEY_UP, ord('k')):
+            offset = max(0, offset - 1)
+        elif key in (curses.KEY_NPAGE, ord(' ')):
+            offset += page
+        elif key == curses.KEY_PPAGE:
+            offset = max(0, offset - page)
+        elif key == curses.KEY_HOME:
+            offset = 0
+        elif key == curses.KEY_END:
+            offset = max(0, len(lines) - page)
+
+
+def action(screen, function):
+    with terminal(screen):
+        try:
+            result = function()
+            if result:
+                print(result)
+        except (Error, OSError, KeyboardInterrupt) as exc:
+            print(f'\nStopped: {exc or "interrupted"}')
+        input('\nPress Enter to return to AUR Walk…')
+
+
+def review_build(screen, package, store):
+    approved, content = package.review()
+    if viewer(screen, f'Review {package.name}', content, approve=True):
+        # Explicit approval in the review screen; pacman installation has its own prompt.
+        action(screen, lambda: build_install(package, approved, store))
+
+
+def update_local(screen, package, config):
+    command = config.get('local_updates', {}).get(package.name)
+    if package.is_git or not command:
+        raise Error('No local updater configured for this recipe. See config.example.toml.')
+    if not isinstance(command, list) or not command or not all(isinstance(v, str) for v in command):
+        raise Error('Local updater must be an argv array of strings.')
+    preview = f'Run in {package.path}:\n{shlex.join(command)}\n\nThis helper may edit the recipe. Review its code below.\n'
+    for arg in command:
+        source = package.path / arg
+        if source.is_file() and source.suffix in ('.py', '.sh'):
+            preview += f'\n--- {arg} ---\n{source.read_text(errors="replace")}\n'
+    if not viewer(screen, 'Approve local updater (b to run)', preview, approve=True, approval_label='b approve & run updater'):
+        return
+    package.local_before = local_files(package.path)
+    def execute():
+        if subprocess.run(command, cwd=package.path).returncode:
+            raise Error('Updater failed. Review any partial recipe changes.')
+        return 'Updater finished. Press r to review the recipe changes before building.'
+    action(screen, execute)
+
+
+def tui(screen, packages, store, config):
+    curses.curs_set(0)
+    selected = 0
+    message = 'Fetch first, then review each recipe. No recipe is executed during fetch or review.'
+    while True:
+        h, _ = screen.getmaxyx()
+        count = max(1, h - 7)
+        start = max(0, selected - count + 1)
+        rows = ['AUR WALK  ·  review → build → install', str(packages[0].path.parent) if packages else 'No recipes found.', '',
+                *[f'{">" if i == selected else " "} {p.name:24} {p.status}' for i, p in enumerate(packages) if start <= i < start + count], '', message]
+        draw(screen, rows, 'j/k select  f fetch  r review/build  u local update  w walkthrough  q quit')
+        key = screen.getch()
+        try:
+            if key in (ord('q'), 27):
+                return
+            if not packages:
+                continue
+            if key in (curses.KEY_DOWN, ord('j')):
+                selected = min(len(packages) - 1, selected + 1)
+            elif key in (curses.KEY_UP, ord('k')):
+                selected = max(0, selected - 1)
+            elif key in (ord('f'), ord('w')):
+                for p in packages:
+                    draw(screen, ['Fetching recipes…', p.name], 'Network operation; recipes are not executed.')
+                    try:
+                        p.fetch()
+                    except (Error, OSError) as exc:
+                        p.status = 'fetch failed'
+                        p.note = str(exc)
+                if key == ord('w'):
+                    for p in packages:
+                        if p.status == 'fetch failed':
+                            continue
+                        if p.status.startswith('current'):
+                            continue
+                        review_build(screen, p, store)
+                message = 'Fetch complete. Select a recipe and press r. Failed fetch details appear in review.'
+            elif key in (ord('r'), 10, 13):
+                p = packages[selected]
+                if p.status == 'fetch failed':
+                    viewer(screen, p.name, p.note)
+                else:
+                    review_build(screen, p, store)
+            elif key == ord('u'):
+                update_local(screen, packages[selected], config)
+        except (Error, OSError) as exc:
+            viewer(screen, 'Action stopped', str(exc))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, help='directory containing package folders (default: configured root or ~/builds)')
+    parser.add_argument('--config', type=Path, default=Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))) / 'aur-walk/config.toml')
+    parser.add_argument('--list', action='store_true', help='list recipes without fetching, executing recipes, or writing state')
+    args = parser.parse_args()
+    config = tomllib.loads(args.config.read_text()) if args.config.exists() else {}
+    root = (args.root or Path(config.get('root', Path.home() / 'builds'))).expanduser().resolve()
+    if not root.is_dir():
+        raise Error(f'Package root does not exist: {root}')
+    paths = sorted(p for p in root.iterdir() if p.is_dir() and (p / 'PKGBUILD').is_file())
+    if args.list:
+        for path in paths:
+            p = Package(path)
+            print(f'{p.name:24} {p.status:40} {p.path}')
+        return
+    if os.geteuid() == 0:
+        raise Error('Run as your normal user; makepkg must not run as root.')
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise Error('The TUI requires a terminal. Use --list for noninteractive discovery.')
+    for executable in ('git', 'makepkg', 'sudo', 'pacman'):
+        if not shutil.which(executable):
+            raise Error(f'Required command not found: {executable}')
+    state = Path(os.environ.get('XDG_STATE_HOME', str(Path.home() / '.local/state'))) / 'aur-walk'
+    state.mkdir(parents=True, exist_ok=True)
+    with (state / 'lock').open('w') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Error('Another AUR Walk session is already running.') from exc
+        store = Store(state / 'state.json')
+        packages = [Package(p, store.data.get(str(p))) for p in paths]
+        curses.wrapper(tui, packages, store, config)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (Error, OSError, ValueError, KeyboardInterrupt, curses.error) as exc:
+        print(f'aur-walk: {exc or "interrupted"}', file=sys.stderr)
+        sys.exit(1)
