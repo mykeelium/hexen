@@ -49,6 +49,8 @@ hl.on("hyprland.start", function()
 	-- Start the work compliance agent when installed on this machine.
 	hl.exec_cmd("if [ -x /usr/bin/drata-agent ]; then /usr/bin/drata-agent; fi")
 	hl.exec_cmd("waybar")
+	-- NetworkManager tray menu and graphical VPN credential prompts.
+	hl.exec_cmd("nm-applet --indicator")
 	hl.exec_cmd("mako")
 	hl.exec_cmd("hyprpaper")
 	hl.exec_cmd("hypridle")
