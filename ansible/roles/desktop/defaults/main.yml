@@ -125,6 +125,7 @@ desktop_packages:
   # OpenVPN connections are imported and controlled through NetworkManager.
   - networkmanager-openvpn
   - nm-connection-editor
+  - network-manager-applet
   # Local QEMU/KVM host managed through the system libvirt connection.
   - qemu-desktop
   - libvirt
